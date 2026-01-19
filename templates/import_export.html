@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+
+{% block title %}Import & Export Data{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <!-- Export Section -->
+        <div class="card mb-4">
+            <div class="card-header bg-success text-white">
+                <i class="bi bi-download"></i> Export Data to CSV
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Download all your inventory records as a CSV file. You can open this file in Excel, Google Sheets, or any spreadsheet application.</p>
+
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> <strong>What gets exported:</strong>
+                    <ul class="mb-0 mt-2">
+                        <li>All inventory records with complete information</li>
+                        <li>Drug names, concentrations, suppliers, and dates</li>
+                        <li>Storage locations and temperatures</li>
+                        <li>All custom fields (solvents, solubility, etc.)</li>
+                    </ul>
+                </div>
+
+                <a href="/export/csv" class="btn btn-success btn-lg">
+                    <i class="bi bi-download"></i> Download CSV Export
+                </a>
+
+                <div class="mt-3">
+                    <small class="text-muted">
+                        File will be named: <code>lab_inventory_YYYYMMDD_HHMMSS.csv</code>
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Import Section -->
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <i class="bi bi-upload"></i> Import Data from CSV
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Upload a CSV file to import multiple records at once. The file must have the correct column headers.</p>
+
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i> <strong>Important Requirements:</strong>
+                    <ul class="mb-0 mt-2">
+                        <li>CSV file must have column headers in the first row</li>
+                        <li>Required column: <strong>Drug Name</strong></li>
+                        <li>Optional columns: Stock Concentration, Unit, Storage Temperature, Supplier, etc.</li>
+                        <li>Use the export function to see the correct format</li>
+                    </ul>
+                </div>
+
+                <form id="importForm" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="csvFile" class="form-label">Select CSV File</label>
+                        <input type="file" class="form-control" id="csvFile" accept=".csv" required>
+                    </div>
+
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="skipDuplicates" checked>
+                        <label class="form-check-label" for="skipDuplicates">
+                            Skip duplicate drug names (don't import if drug name already exists)
+                        </label>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-lg">
+                        <i class="bi bi-upload"></i> Upload and Import
+                    </button>
+                </form>
+
+                <div id="importResults" class="mt-4" style="display: none;">
+                    <h5>Import Results</h5>
+                    <div id="resultsContent"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CSV Format Guide -->
+        <div class="card mb-4">
+            <div class="card-header bg-info text-white">
+                <i class="bi bi-info-circle"></i> CSV Format Guide
+            </div>
+            <div class="card-body">
+                <h6>Required and Optional Columns:</h6>
+
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Column Name</th>
+                                <th>Required?</th>
+                                <th>Example</th>
+                                <th>Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Drug Name</strong></td>
+                                <td><span class="badge bg-danger">Required</span></td>
+                                <td>Penicillin</td>
+                                <td>Name of the drug/reagent</td>
+                            </tr>
+                            <tr>
+                                <td>Stock Concentration</td>
+                                <td><span class="badge bg-secondary">Optional</span></td>
+                                <td>100</td>
+                                <td>Numeric value only</td>
+                            </tr>
+                            <tr>
+                                <td>Unit</td>
+                                <td><span class="badge bg-secondary">Optional</span></td>
+                                <td>µM</td>
+                                <td>µM, mM, M, mg/mL, etc.</td>
+                            </tr>
+                            <tr>
+                                <td>Storage Temperature</td>
+                                <td><span class="badge bg-secondary">Optional</span></td>
+                                <td>4C, -20C, -80C, RT</td>
+                                <td>Use exact format</td>
+                            </tr>
+                            <tr>
+                                <td>Supplier</td>
+                                <td><span class="badge bg-secondary">Optional</span></td>
+                                <td>Sigma-Aldrich</td>
+                                <td>Company name</td>
+                            </tr>
+                            <tr>
+                                <td>Preparation Date</td>
+                                <td><span class="badge bg-secondary">Optional</span></td>
+                                <td>2026-01-16</td>
+                                <td>YYYY-MM-DD format</td>
+                            </tr>
+                            <tr>
+                                <td>Notes</td>
+                                <td><span class="badge bg-secondary">Optional</span></td>
+                                <td>Keep protected from light</td>
+                                <td>Any text</td>
+                            </tr>
+                            <tr>
+                                <td>Solvents</td>
+                                <td><span class="badge bg-secondary">Optional</span></td>
+                                <td>DMSO</td>
+                                <td>Solvent used</td>
+                            </tr>
+                            <tr>
+                                <td>Solubility</td>
+                                <td><span class="badge bg-secondary">Optional</span></td>
+                                <td>Water soluble</td>
+                                <td>Solubility information</td>
+                            </tr>
+                            <tr>
+                                <td>Light Sensitive</td>
+                                <td><span class="badge bg-secondary">Optional</span></td>
+                                <td>Yes, No</td>
+                                <td>Yes or No</td>
+                            </tr>
+                            <tr>
+                                <td>Sterility</td>
+                                <td><span class="badge bg-secondary">Optional</span></td>
+                                <td>Sterile, Non-sterile</td>
+                                <td>Sterility status</td>
+                            </tr>
+                            <tr>
+                                <td>Lot Number</td>
+                                <td><span class="badge bg-secondary">Optional</span></td>
+                                <td>12345ABC</td>
+                                <td>Manufacturer's lot number</td>
+                            </tr>
+                            <tr>
+                                <td>Product Number</td>
+                                <td><span class="badge bg-secondary">Optional</span></td>
+                                <td>P-1234</td>
+                                <td>Catalog/product number</td>
+                            </tr>
+                            <tr>
+                                <td>Storage Section</td>
+                                <td><span class="badge bg-secondary">Optional</span></td>
+                                <td>body, door</td>
+                                <td>Fridge section</td>
+                            </tr>
+                            <tr>
+                                <td>Storage Row</td>
+                                <td><span class="badge bg-secondary">Optional</span></td>
+                                <td>0, 1, 2</td>
+                                <td>Row number (starts at 0)</td>
+                            </tr>
+                            <tr>
+                                <td>Storage Column</td>
+                                <td><span class="badge bg-secondary">Optional</span></td>
+                                <td>0, 1, 2</td>
+                                <td>Column number (starts at 0)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="alert alert-success mt-3">
+                    <i class="bi bi-lightbulb"></i> <strong>Tip:</strong>
+                    Export your current data to see the exact format. You can then use this file as a template for importing new records.
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center">
+            <a href="/" class="btn btn-outline-primary">
+                <i class="bi bi-arrow-left"></i> Back to Home
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('importForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    const fileInput = document.getElementById('csvFile');
+    const skipDuplicates = document.getElementById('skipDuplicates').checked;
+
+    if (!fileInput.files || fileInput.files.length === 0) {
+        alert('Please select a CSV file');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    formData.append('skip_duplicates', skipDuplicates);
+
+    // Show loading message
+    const resultsDiv = document.getElementById('importResults');
+    const resultsContent = document.getElementById('resultsContent');
+    resultsContent.innerHTML = '<div class="alert alert-info">Importing data, please wait...</div>';
+    resultsDiv.style.display = 'block';
+
+    fetch('/import/csv', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.success) {
+            let html = '<div class="alert alert-success"><strong>Import Completed!</strong></div>';
+            html += '<ul class="list-group">';
+            html += `<li class="list-group-item d-flex justify-content-between align-items-center">
+                        Successfully imported
+                        <span class="badge bg-success rounded-pill">${result.imported}</span>
+                     </li>`;
+
+            if (result.skipped > 0) {
+                html += `<li class="list-group-item d-flex justify-content-between align-items-center">
+                            Skipped (duplicates)
+                            <span class="badge bg-warning rounded-pill">${result.skipped}</span>
+                         </li>`;
+            }
+
+            if (result.errors && result.errors.length > 0) {
+                html += `<li class="list-group-item d-flex justify-content-between align-items-center">
+                            Errors
+                            <span class="badge bg-danger rounded-pill">${result.errors.length}</span>
+                         </li>`;
+            }
+            html += '</ul>';
+
+            if (result.errors && result.errors.length > 0) {
+                html += '<div class="alert alert-danger mt-3"><strong>Errors:</strong><ul>';
+                result.errors.forEach(error => {
+                    html += `<li>${error}</li>`;
+                });
+                html += '</ul></div>';
+            }
+
+            html += '<div class="mt-3"><a href="/" class="btn btn-primary">View Updated Records</a></div>';
+
+            resultsContent.innerHTML = html;
+        } else {
+            resultsContent.innerHTML = `<div class="alert alert-danger"><strong>Error:</strong> ${result.error}</div>`;
+        }
+    })
+    .catch(error => {
+        resultsContent.innerHTML = `<div class="alert alert-danger"><strong>Error:</strong> ${error}</div>`;
+    });
+});
+</script>
+{% endblock %}

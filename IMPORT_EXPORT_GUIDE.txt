@@ -1,0 +1,335 @@
+================================================================================
+                    CSV IMPORT & EXPORT FEATURE GUIDE
+================================================================================
+
+Your lab management system now has full CSV import and export capabilities!
+
+--- WHAT'S NEW ---
+
+1. EXPORT FUNCTIONALITY (Enhanced)
+   - Export all inventory records to CSV
+   - Open in Excel, Google Sheets, or any spreadsheet app
+   - Use as backup or for analysis
+   - Access from: Navigation menu > Import/Export > Quick Export CSV
+   - Or: Import/Export page > Download CSV Export button
+
+2. IMPORT FUNCTIONALITY (New!)
+   - Upload CSV files to add multiple records at once
+   - Skip duplicates automatically
+   - See detailed import results
+   - Access from: Navigation menu > Import/Export > Import & Export Data
+
+--- HOW TO ACCESS ---
+
+Start your Flask application:
+  cd D:\lab_management_web
+  python app.py
+
+Open browser to: http://localhost:5000
+
+Click: Import/Export in the navigation menu
+
+--- EXPORTING DATA ---
+
+STEP 1: Navigate to Import/Export page
+
+STEP 2: Click "Download CSV Export" button
+
+STEP 3: Your browser will download a file named:
+        lab_inventory_YYYYMMDD_HHMMSS.csv
+
+WHAT GETS EXPORTED:
+- All inventory records
+- Drug names, concentrations, units
+- Storage temperatures and locations
+- Suppliers and dates
+- All custom fields (solvents, solubility, sterility, etc.)
+- Complete storage location data (section, row, column)
+
+USE CASES:
+- Create backups of your inventory
+- Analyze data in Excel/Sheets
+- Share inventory lists with colleagues
+- Create reports
+- Use as template for importing new data
+
+--- IMPORTING DATA ---
+
+STEP 1: Prepare Your CSV File
+
+Your CSV must have these column headers (copy/paste exactly):
+  Drug Name,Stock Concentration,Unit,Storage Temperature,Supplier,
+  Preparation Date,Notes,Solvents,Solubility,Light Sensitive,
+  Preparation Time,Expiration Time,Sterility,Lot Number,Product Number,
+  Storage Section,Storage Row,Storage Column
+
+REQUIRED: Only "Drug Name" is required
+OPTIONAL: All other columns
+
+TIP: Export your current data first to see the exact format!
+
+STEP 2: Upload the File
+
+1. Go to Import/Export page
+2. Click "Choose File" under Import section
+3. Select your CSV file
+4. Check/uncheck "Skip duplicate drug names" as needed
+5. Click "Upload and Import"
+
+STEP 3: Review Results
+
+The system will show:
+- Number of records successfully imported (green badge)
+- Number of duplicates skipped (yellow badge)
+- Any errors encountered (red badge)
+- Detailed error messages if needed
+
+--- SAMPLE CSV FILE ---
+
+A sample import file has been created at:
+D:\lab_management_web\sample_import.csv
+
+This file contains 4 example records you can use to test the import feature.
+
+Contents:
+1. Penicillin (4C, body storage)
+2. DMSO (-20C, door storage)
+3. FBS (-20C, body storage)
+4. Trypsin-EDTA (4C, door storage)
+
+To test:
+1. Open the Import/Export page
+2. Upload sample_import.csv
+3. See the 4 records imported
+4. View them in the main inventory table
+
+--- CSV FORMAT DETAILS ---
+
+COLUMN DESCRIPTIONS:
+
+Drug Name
+  - REQUIRED
+  - Name of the drug/reagent
+  - Example: "Penicillin", "DMSO", "FBS"
+
+Stock Concentration
+  - Number only (no units)
+  - Example: 100, 50.5, 0.25
+
+Unit
+  - Concentration unit
+  - Examples: µM, mM, M, mg/mL, µg/mL, %, X
+
+Storage Temperature
+  - Exact format: 4C, -20C, -80C, or RT
+  - Example: 4C for 4 degrees Celsius
+
+Supplier
+  - Company/vendor name
+  - Example: "Sigma-Aldrich", "Fisher Scientific"
+
+Preparation Date
+  - Format: YYYY-MM-DD
+  - Example: 2026-01-16
+
+Notes
+  - Any text
+  - Example: "Keep protected from light"
+
+Solvents
+  - Solvent used
+  - Example: "DMSO", "Water", "Ethanol"
+
+Solubility
+  - Solubility information
+  - Example: "Water soluble", "DMSO soluble"
+
+Light Sensitive
+  - Yes or No
+  - Example: "Yes", "No"
+
+Preparation Time
+  - Time to prepare
+  - Example: "5 min", "30 min"
+
+Expiration Time
+  - How long it lasts
+  - Example: "30 days", "12 months"
+
+Sterility
+  - Sterile or Non-sterile
+  - Example: "Sterile", "Non-sterile"
+
+Lot Number
+  - Manufacturer's lot number
+  - Example: "LOT12345"
+
+Product Number
+  - Catalog/product number
+  - Example: "P-1234"
+
+Storage Section
+  - body or door
+  - Example: "body", "door"
+  - NOTE: Don't use "door" for -80C items!
+
+Storage Row
+  - Row number (starts at 0)
+  - Example: 0, 1, 2
+
+Storage Column
+  - Column number (starts at 0)
+  - Example: 0, 1, 2
+
+--- HANDLING DUPLICATES ---
+
+The system can automatically skip duplicate drug names:
+
+SKIP DUPLICATES CHECKED (Default):
+- If "Penicillin" already exists in database, skip it
+- Prevents accidental duplicate entries
+- Safe for bulk imports
+
+SKIP DUPLICATES UNCHECKED:
+- Import all records, even if drug name exists
+- Useful if you have multiple entries with same name
+  (e.g., different lots of same drug)
+- May create duplicate entries
+
+--- IMPORT RESULTS EXPLAINED ---
+
+After importing, you'll see a summary:
+
+Successfully imported: X
+  - These records were added to the database
+  - They appear in your inventory immediately
+
+Skipped (duplicates): X
+  - These records had drug names that already exist
+  - Only shown if "Skip duplicates" was checked
+  - Data was NOT added
+
+Errors: X
+  - These rows had problems (missing required data, invalid format)
+  - Click to see detailed error messages
+  - Fix these rows and re-import
+
+--- COMMON IMPORT ERRORS ---
+
+ERROR: "Missing drug name"
+  - The "Drug Name" column is empty for that row
+  - FIX: Add a drug name
+
+ERROR: "Invalid concentration format"
+  - Stock concentration must be a number
+  - FIX: Remove text from concentration field
+  - Example: Change "100 mg" to just "100" (put "mg" in Unit column)
+
+ERROR: "Row X: ..."
+  - Problem in specific row number
+  - FIX: Check that row in your CSV file
+
+--- BEST PRACTICES ---
+
+BACKUP FIRST:
+- Always export your data before importing
+- Keep exports as dated backups
+
+TEST WITH SMALL FILES:
+- Import 5-10 records first
+- Verify they look correct
+- Then import larger batches
+
+USE EXPORT AS TEMPLATE:
+- Export current data
+- Use the CSV format as a template
+- Add new rows with same column headers
+
+CHECK DUPLICATES SETTING:
+- Review the "Skip duplicates" option
+- Choose based on your needs
+
+VERIFY AFTER IMPORT:
+- Check main inventory page
+- Search for imported items
+- Verify data looks correct
+
+--- WORKFLOW EXAMPLES ---
+
+EXAMPLE 1: Bulk Import New Inventory
+1. Create CSV with all new reagents
+2. Include all relevant columns
+3. Check "Skip duplicates"
+4. Upload and import
+5. View results and verify
+
+EXAMPLE 2: Update Existing Database
+1. Export current data
+2. Open in Excel
+3. Add new rows or update existing
+4. Save as CSV
+5. Import with duplicates setting as needed
+
+EXAMPLE 3: Migrate from Another System
+1. Export data from old system
+2. Match column headers to our format
+3. Map fields (e.g., "Name" -> "Drug Name")
+4. Save as CSV
+5. Import to new system
+
+EXAMPLE 4: Regular Backup
+1. Export data weekly
+2. Save to dated folder
+3. Optional: Import to test database to verify
+
+--- TROUBLESHOOTING ---
+
+PROBLEM: Import button doesn't work
+SOLUTION: Make sure you selected a .csv file
+
+PROBLEM: All records skipped
+SOLUTION: Uncheck "Skip duplicates" or use different drug names
+
+PROBLEM: "Invalid CSV format"
+SOLUTION: Ensure file is saved as CSV, not Excel (.xlsx)
+
+PROBLEM: Special characters show incorrectly
+SOLUTION: Save CSV with UTF-8 encoding
+
+PROBLEM: Numbers showing as text
+SOLUTION: Remove quotes around numbers in CSV
+
+--- FILE LOCATIONS ---
+
+Application: D:\lab_management_web\
+Sample CSV: D:\lab_management_web\sample_import.csv
+Your exports: Downloads folder (browser default)
+
+--- ACCESSING THE FEATURE ---
+
+NAVIGATION MENU:
+Import/Export dropdown -> "Import & Export Data"
+
+QUICK EXPORT:
+Import/Export dropdown -> "Quick Export CSV"
+
+IMPORT/EXPORT PAGE URL:
+http://localhost:5000/import-export
+
+--- TECHNICAL DETAILS ---
+
+- CSV files use UTF-8 encoding
+- Header row must be exact match (case-sensitive)
+- Blank fields are stored as NULL
+- Import is transactional (all or nothing per row)
+- Duplicate checking is case-sensitive on drug name
+
+================================================================================
+                       READY TO USE!
+================================================================================
+
+Start the app: python app.py
+Go to: http://localhost:5000
+Click: Import/Export in navigation menu
+
+Try importing the sample file to see how it works!

@@ -1,0 +1,5 @@
+Drug Name,Stock Concentration,Unit,Storage Temperature,Supplier,Preparation Date,Notes,Solvents,Solubility,Light Sensitive,Preparation Time,Expiration Time,Sterility,Lot Number,Product Number,Storage Section,Storage Row,Storage Column
+Penicillin,100,mg/mL,4C,Sigma-Aldrich,2026-01-15,Store at 4C,Water,Water soluble,No,5 min,30 days,Sterile,LOT12345,P-1234,body,0,0
+DMSO,100,%,-20C,Fisher Scientific,2026-01-10,Keep tightly sealed,N/A,Miscible,No,,,Non-sterile,LOT67890,D-5678,door,0,1
+FBS (Fetal Bovine Serum),100,mL,-20C,Gibco,2026-01-05,Aliquot before freezing,N/A,N/A,No,10 min,12 months,Sterile,FBS123,10270-106,body,1,1
+Trypsin-EDTA,0.25,%,4C,Thermo Fisher,2026-01-12,Single use aliquots preferred,PBS,Water soluble,No,,,Sterile,TRYP456,25200-056,door,1,0

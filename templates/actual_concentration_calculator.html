@@ -1,0 +1,374 @@
+{% extends "base.html" %}
+
+{% block title %}Actual Concentration Calculator{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-calculator"></i> Actual Concentration Calculator
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Calculate the actual final concentrations when adding stock solutions to media. Shows what concentration you'll actually get.</p>
+
+                <div class="row mb-4">
+                    <div class="col-md-4">
+                        <label for="mediaVolume" class="form-label">Initial Media Volume (mL) *</label>
+                        <input type="number" step="any" class="form-control" id="mediaVolume" required placeholder="e.g., 10">
+                        <small class="text-muted">Starting volume before adding components</small>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="mediaSelect" class="form-label">Media/Base Solution (Optional)</label>
+                        <select class="form-select" id="mediaSelect">
+                            <option value="">-- Select Media --</option>
+                            {% for record in records %}
+                            <option value="{{ record.id }}" data-name="{{ record.drug_name }}">
+                                {{ record.drug_name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">The base media being used</small>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="mediaName" class="form-label">Or Enter Media Name</label>
+                        <input type="text" class="form-control" id="mediaName" placeholder="e.g., DMEM, PBS">
+                        <small class="text-muted">Manual media name entry</small>
+                    </div>
+                </div>
+
+                <h6 class="mb-3">Components to Add:</h6>
+
+                <div id="componentsContainer">
+                    <!-- Component rows will be added here -->
+                </div>
+
+                <button type="button" class="btn btn-success" onclick="addComponentRow()">
+                    <i class="bi bi-plus-circle"></i> Add Component
+                </button>
+
+                <hr>
+
+                <button type="button" class="btn btn-primary btn-lg" onclick="calculateActualConcentrations()">
+                    <i class="bi bi-calculator-fill"></i> Calculate Actual Concentrations
+                </button>
+                <button type="button" class="btn btn-secondary btn-lg" onclick="clearActualConcForm()">
+                    <i class="bi bi-x-circle"></i> Clear All
+                </button>
+
+                <hr>
+
+                <div id="resultsDiv" style="display: none;">
+                    <h5 class="text-success"><i class="bi bi-check-circle"></i> Actual Concentration Results</h5>
+                    <div class="calculator-result">
+                        <pre id="resultsText" style="font-family: 'Consolas', monospace; font-size: 1.05rem; margin: 0;"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-3 text-center">
+            <a href="/" class="btn btn-outline-primary">
+                <i class="bi bi-arrow-left"></i> Back to Home
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let componentCounter = 0;
+const inventoryRecords = {{ records | tojson }};
+
+// Smart number formatting - first significant digit is the unit's digit
+function formatVolume(volumeInML) {
+    if (volumeInML >= 1) {
+        // Use mL, round to make first significant digit the unit's place
+        return volumeInML.toFixed(1) + ' mL';
+    } else if (volumeInML >= 0.001) {
+        // Convert to µL
+        const volumeInUL = volumeInML * 1000;
+        return volumeInUL.toFixed(1) + ' µL';
+    } else {
+        // Very small volumes, use nL
+        const volumeInNL = volumeInML * 1000000;
+        return volumeInNL.toFixed(1) + ' nL';
+    }
+}
+
+function formatConcentration(value) {
+    // Format concentration with first significant digit at unit's place
+    if (value >= 1) {
+        return value.toFixed(1);
+    } else if (value >= 0.1) {
+        return value.toFixed(2);
+    } else if (value >= 0.01) {
+        return value.toFixed(3);
+    } else {
+        return value.toExponential(1);
+    }
+}
+
+// Auto-fill media name from dropdown
+document.getElementById('mediaSelect').addEventListener('change', function() {
+    const selected = this.options[this.selectedIndex];
+    const name = selected.getAttribute('data-name');
+    if (name) {
+        document.getElementById('mediaName').value = name;
+    }
+});
+
+function addComponentRow() {
+    componentCounter++;
+    const container = document.getElementById('componentsContainer');
+
+    const row = document.createElement('div');
+    row.className = 'card mb-3';
+    row.id = `component-${componentCounter}`;
+    row.innerHTML = `
+        <div class="card-body">
+            <div class="row align-items-center">
+                <div class="col-md-3">
+                    <label class="form-label">Select from Inventory</label>
+                    <select class="form-select component-select" onchange="fillComponentData(${componentCounter}, this)">
+                        <option value="">-- Or Enter Manually --</option>
+                        ${inventoryRecords.map(r => `
+                            <option value="${r.id}"
+                                    data-name="${r.drug_name}"
+                                    data-conc="${r.stock_concentration || ''}"
+                                    data-unit="${r.stock_unit || 'µM'}">
+                                ${r.drug_name}
+                                ${r.stock_concentration ? `(${r.stock_concentration} ${r.stock_unit})` : ''}
+                            </option>
+                        `).join('')}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Component Name</label>
+                    <input type="text" class="form-control component-name" id="name-${componentCounter}" required>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Stock Conc.</label>
+                    <input type="number" step="any" class="form-control component-conc" id="conc-${componentCounter}" required>
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label">Unit</label>
+                    <select class="form-select component-unit" id="unit-${componentCounter}">
+                        <option value="µM">µM</option>
+                        <option value="nM">nM</option>
+                        <option value="pM">pM</option>
+                        <option value="mM">mM</option>
+                        <option value="M">M</option>
+                        <option value="µg/mL">µg/mL</option>
+                        <option value="ng/mL">ng/mL</option>
+                        <option value="pg/mL">pg/mL</option>
+                        <option value="mg/mL">mg/mL</option>
+                        <option value="g/mL">g/mL</option>
+                        <option value="µg/µL">µg/µL</option>
+                        <option value="ng/µL">ng/µL</option>
+                        <option value="mg/µL">mg/µL</option>
+                        <option value="%">%</option>
+                        <option value="X">X</option>
+                        <option value="U/mL">U/mL</option>
+                        <option value="IU/mL">IU/mL</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Volume Added</label>
+                    <input type="number" step="any" class="form-control component-volume" id="volume-${componentCounter}" required>
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label">Unit</label>
+                    <select class="form-select component-volume-unit" id="volumeunit-${componentCounter}">
+                        <option value="µL">µL</option>
+                        <option value="mL">mL</option>
+                        <option value="L">L</option>
+                    </select>
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label">&nbsp;</label>
+                    <button type="button" class="btn btn-danger btn-sm w-100" onclick="removeComponent(${componentCounter})">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    container.appendChild(row);
+}
+
+function fillComponentData(id, selectElement) {
+    const selected = selectElement.options[selectElement.selectedIndex];
+    const name = selected.getAttribute('data-name');
+    const conc = selected.getAttribute('data-conc');
+    const unit = selected.getAttribute('data-unit');
+
+    if (name) {
+        document.getElementById(`name-${id}`).value = name;
+    }
+    if (conc) {
+        document.getElementById(`conc-${id}`).value = conc;
+        document.getElementById(`unit-${id}`).value = unit;
+    }
+}
+
+function removeComponent(id) {
+    const element = document.getElementById(`component-${id}`);
+    if (element) {
+        element.remove();
+    }
+}
+
+function calculateActualConcentrations() {
+    const mediaVolume = parseFloat(document.getElementById('mediaVolume').value);
+    const mediaName = document.getElementById('mediaName').value.trim() || 'Media';
+
+    if (!mediaVolume || mediaVolume <= 0) {
+        alert('Please enter a valid media volume');
+        return;
+    }
+
+    const components = [];
+    const container = document.getElementById('componentsContainer');
+    const componentCards = container.querySelectorAll('.card');
+
+    componentCards.forEach(card => {
+        const nameInput = card.querySelector('.component-name');
+        const concInput = card.querySelector('.component-conc');
+        const unitSelect = card.querySelector('.component-unit');
+        const volumeInput = card.querySelector('.component-volume');
+        const volumeUnitSelect = card.querySelector('.component-volume-unit');
+
+        if (nameInput.value && concInput.value && volumeInput.value) {
+            components.push({
+                name: nameInput.value,
+                stock_concentration: parseFloat(concInput.value),
+                stock_unit: unitSelect.value,
+                volume: parseFloat(volumeInput.value),
+                volume_unit: volumeUnitSelect.value
+            });
+        }
+    });
+
+    if (components.length === 0) {
+        alert('Please add at least one component');
+        return;
+    }
+
+    // Calculate actual concentrations
+    let currentVolume = mediaVolume;
+    const results = components.map(comp => {
+        // Convert volume to mL
+        let volumeInML;
+        if (comp.volume_unit === 'µL') {
+            volumeInML = comp.volume / 1000.0;
+        } else if (comp.volume_unit === 'L') {
+            volumeInML = comp.volume * 1000.0;
+        } else {
+            volumeInML = comp.volume;
+        }
+
+        const finalVolume = currentVolume + volumeInML;
+
+        // C2 = (C1 * V1) / V2
+        const finalConc = (comp.stock_concentration * volumeInML) / finalVolume;
+
+        const result = {
+            name: comp.name,
+            stock_concentration: comp.stock_concentration,
+            stock_unit: comp.stock_unit,
+            volume_added: comp.volume,
+            volume_unit: comp.volume_unit,
+            volume_added_ml: volumeInML,
+            initial_volume: currentVolume,
+            final_concentration: finalConc,
+            final_volume: finalVolume
+        };
+
+        currentVolume = finalVolume;
+        return result;
+    });
+
+    displayActualConcResults(results, mediaVolume, mediaName);
+}
+
+function displayActualConcResults(results, initialMediaVolume, mediaName) {
+    const finalTotalVolume = results[results.length - 1].final_volume;
+
+    let resultsText = `
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                   ACTUAL CONCENTRATION CALCULATION RESULTS                     ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+Initial ${mediaName} Volume: ${formatVolume(initialMediaVolume)}
+Number of Components Added: ${results.length}
+
+`;
+
+    results.forEach((comp, index) => {
+        resultsText += `
+┌─ COMPONENT ${index + 1}: ${comp.name} ────────────────────────────────────────────────┐
+│                                                                              │
+│  Stock Concentration:         ${comp.stock_concentration.toFixed(1)} ${comp.stock_unit}
+│  Volume Added:                ${formatVolume(comp.volume_added_ml)}
+│  Volume Before Addition:      ${formatVolume(comp.initial_volume)}
+│                                                                              │
+│  ► FINAL CONCENTRATION:       ${formatConcentration(comp.final_concentration)} ${comp.stock_unit}
+│  ► VOLUME AFTER ADDITION:     ${formatVolume(comp.final_volume)}
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+`;
+    });
+
+    // Preparation summary
+    resultsText += `
+┌─ PREPARATION SUMMARY ───────────────────────────────────────────────────────┐
+│                                                                              │
+│  Starting Point:                                                             │
+│    • ${formatVolume(initialMediaVolume)} of ${mediaName}
+│                                                                              │
+│  Add Components in Order:                                                    │`;
+
+    results.forEach((comp, index) => {
+        resultsText += `
+│    ${index + 1}. Add ${formatVolume(comp.volume_added_ml)} of ${comp.name} (${comp.stock_concentration.toFixed(1)} ${comp.stock_unit})`;
+    });
+
+    resultsText += `
+│                                                                              │
+│  Final Solution Contains:                                                    │`;
+
+    results.forEach(comp => {
+        resultsText += `
+│    • ${comp.name}: ${formatConcentration(comp.final_concentration)} ${comp.stock_unit}`;
+    });
+
+    resultsText += `
+│                                                                              │
+│  Final Total Volume:          ${formatVolume(finalTotalVolume)}
+│  Volume Increase:             ${formatVolume(finalTotalVolume - initialMediaVolume)} (from added components)
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+    `;
+
+    document.getElementById('resultsText').textContent = resultsText;
+    document.getElementById('resultsDiv').style.display = 'block';
+}
+
+function clearActualConcForm() {
+    document.getElementById('mediaVolume').value = '';
+    document.getElementById('mediaSelect').value = '';
+    document.getElementById('mediaName').value = '';
+    document.getElementById('componentsContainer').innerHTML = '';
+    document.getElementById('resultsDiv').style.display = 'none';
+    componentCounter = 0;
+}
+
+// Add one component row on page load
+window.addEventListener('load', function() {
+    addComponentRow();
+});
+</script>
+{% endblock %}

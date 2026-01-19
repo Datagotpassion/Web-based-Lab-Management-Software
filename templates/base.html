@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Lab Management System{% endblock %}</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+
+    <!-- Custom CSS -->
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --secondary-color: #3498db;
+            --success-color: #27ae60;
+            --danger-color: #e74c3c;
+            --warning-color: #f39c12;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f6fa;
+        }
+
+        .navbar {
+            background-color: var(--primary-color) !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .navbar-brand {
+            font-weight: bold;
+            font-size: 1.5rem;
+        }
+
+        .main-container {
+            margin-top: 20px;
+            margin-bottom: 40px;
+        }
+
+        .card {
+            border: none;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .card-header {
+            background-color: var(--secondary-color);
+            color: white;
+            font-weight: bold;
+            border-radius: 10px 10px 0 0 !important;
+        }
+
+        .btn-primary {
+            background-color: var(--secondary-color);
+            border-color: var(--secondary-color);
+        }
+
+        .btn-primary:hover {
+            background-color: #2980b9;
+            border-color: #2980b9;
+        }
+
+        .table {
+            background-color: white;
+        }
+
+        .fridge-grid {
+            display: inline-block;
+            margin: 10px;
+        }
+
+        .grid-cell {
+            width: 100px;
+            height: 80px;
+            margin: 3px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 0.75rem;
+            text-align: center;
+            vertical-align: top;
+        }
+
+        .grid-cell:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        .grid-cell.empty {
+            background-color: white;
+        }
+
+        .grid-cell.single {
+            background-color: #d5f4e6;
+            border-color: var(--success-color);
+        }
+
+        .grid-cell.multiple {
+            background-color: #fadbd8;
+            border-color: var(--danger-color);
+        }
+
+        .temp-badge {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.85rem;
+        }
+
+        .temp-4c {
+            background-color: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .temp-minus20 {
+            background-color: #fff3e0;
+            color: #f57c00;
+        }
+
+        .temp-minus80 {
+            background-color: #fce4ec;
+            color: #c2185b;
+        }
+
+        .modal-lg {
+            max-width: 900px;
+        }
+
+        .form-label {
+            font-weight: 600;
+            color: var(--primary-color);
+        }
+
+        .fridge-section {
+            background-color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+
+        .fridge-section h5 {
+            color: var(--primary-color);
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+
+        .grid-row {
+            margin-bottom: 5px;
+        }
+
+        .alert {
+            border-radius: 8px;
+        }
+
+        .calculator-result {
+            background-color: #f8f9fa;
+            border-left: 4px solid var(--success-color);
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+    </style>
+
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-droplet-fill"></i> Lab Management System
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">
+                            <i class="bi bi-house-fill"></i> Home
+                        </a>
+                    </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-calculator-fill"></i> Calculators
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="/calculator/dilution">Dilution Calculator</a></li>
+                            <li><a class="dropdown-item" href="/calculator/actual-concentration">Actual Concentration Calculator</a></li>
+                        </ul>
+                    </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-arrow-down-up"></i> Import/Export
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="/import-export">Import & Export Data</a></li>
+                            <li><a class="dropdown-item" href="/export/csv">Quick Export CSV</a></li>
+                        </ul>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/config">
+                            <i class="bi bi-gear-fill"></i> Configure Fridges
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container-fluid main-container">
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
