@@ -251,8 +251,8 @@ class Database:
                 supplier, preparation_date, notes, solvents, solubility,
                 light_sensitive, preparation_time, expiration_time, sterility,
                 lot_number, product_number, storage_section, storage_row, storage_column,
-                aliquot_volume
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                fridge_region_id, aliquot_volume
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             data['drug_name'],
             data['stock_concentration'],
@@ -272,6 +272,7 @@ class Database:
             data.get('storage_section'),
             data.get('storage_row'),
             data.get('storage_column'),
+            data.get('fridge_region_id'),
             data.get('aliquot_volume')
         ))
 
@@ -305,6 +306,7 @@ class Database:
                 storage_section = ?,
                 storage_row = ?,
                 storage_column = ?,
+                fridge_region_id = ?,
                 aliquot_volume = ?
             WHERE id = ?
         ''', (
@@ -326,6 +328,7 @@ class Database:
             data.get('storage_section'),
             data.get('storage_row'),
             data.get('storage_column'),
+            data.get('fridge_region_id'),
             data.get('aliquot_volume'),
             record_id
         ))

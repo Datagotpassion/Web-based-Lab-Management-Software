@@ -187,21 +187,12 @@
                     <div class="mb-3">
                         <label class="form-label">Storage Location</label>
                         <div class="row">
-                            <div class="col-md-3">
-                                <label class="form-label text-muted small">Section</label>
-                                <select class="form-select" id="storageSection">
-                                    <option value="">Not Specified</option>
-                                    <option value="body">Body</option>
-                                    <option value="door">Door</option>
+                            <div class="col-md-6">
+                                <select class="form-select" id="fridgeZone">
+                                    <option value="">Select a zone...</option>
+                                    <!-- Zones loaded dynamically based on storage temperature -->
                                 </select>
-                            </div>
-                            <div class="col-md-3">
-                                <label class="form-label text-muted small">Row</label>
-                                <input type="number" class="form-control" id="storageRow" min="0" max="9">
-                            </div>
-                            <div class="col-md-3">
-                                <label class="form-label text-muted small">Column</label>
-                                <input type="number" class="form-control" id="storageColumn" min="0" max="9">
+                                <small class="text-muted" id="zoneHint">Select storage temperature first</small>
                             </div>
                         </div>
                     </div>

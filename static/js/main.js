@@ -2,11 +2,13 @@
 
 let allRecords = [];
 let currentEditingId = null;
+let zoneCache = {}; // Cache zone data for display
 
 // Initialize on page load
 $(document).ready(function() {
     loadRecords();
     loadFridgeDisplays();
+    loadAllZones(); // Load zone cache for display
 
     // Search functionality
     $('#searchInput').on('input', function() {
@@ -17,11 +19,124 @@ $(document).ready(function() {
         filterRecords();
     });
 
-    // Handle storage temperature change to update door section visibility
+    // Handle storage temperature change to load appropriate zones
     $('#storageTemp').on('change', function() {
-        updateStorageSectionOptions();
+        loadZonesForTemperature();
     });
 });
+
+// Load all zones into cache for display purposes
+function loadAllZones() {
+    const temps = ['4C', '-20C', '-80C'];
+    const sections = ['body', 'door'];
+    let pendingRequests = 0;
+    let completedRequests = 0;
+
+    temps.forEach(temp => {
+        sections.forEach(section => {
+            if (temp === '-80C' && section === 'door') return; // -80C has no door
+            pendingRequests++;
+
+            fetch(`/api/schematic/${temp}/${section}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.zones) {
+                        data.zones.forEach(zone => {
+                            zoneCache[zone.id] = {
+                                name: zone.zone_name,
+                                temp: temp,
+                                section: section
+                            };
+                        });
+                    }
+                    completedRequests++;
+                    // Re-render records once all zones are loaded
+                    if (completedRequests === pendingRequests && allRecords.length > 0) {
+                        displayRecords(allRecords);
+                    }
+                })
+                .catch(error => {
+                    console.error(`Error loading zones for ${temp}/${section}:`, error);
+                    completedRequests++;
+                });
+        });
+    });
+}
+
+// Load zones for the selected temperature
+function loadZonesForTemperature() {
+    const temp = $('#storageTemp').val();
+    const zoneSelect = $('#fridgeZone');
+    const zoneHint = $('#zoneHint');
+
+    if (!temp || temp === 'RT') {
+        zoneSelect.html('<option value="">No zones for RT</option>');
+        zoneHint.text('Room temperature items do not have fridge zones');
+        return;
+    }
+
+    zoneSelect.html('<option value="">Loading zones...</option>');
+    zoneHint.text('');
+
+    // Fetch zones for body and door sections
+    const sections = temp === '-80C' ? ['body'] : ['body', 'door'];
+    let allZones = [];
+    let completed = 0;
+
+    sections.forEach(section => {
+        fetch(`/api/schematic/${temp}/${section}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.zones && data.zones.length > 0) {
+                    data.zones.forEach(zone => {
+                        allZones.push({
+                            id: zone.id,
+                            name: zone.zone_name,
+                            section: section
+                        });
+                    });
+                }
+                completed++;
+
+                if (completed === sections.length) {
+                    // All sections loaded, populate select
+                    if (allZones.length === 0) {
+                        zoneSelect.html('<option value="">No zones configured</option>');
+                        zoneHint.html('Configure zones in <a href="/schematic-layout-builder">Layout Builder</a>');
+                    } else {
+                        let options = '<option value="">Select a zone...</option>';
+
+                        // Group by section
+                        const bodySections = allZones.filter(z => z.section === 'body');
+                        const doorSections = allZones.filter(z => z.section === 'door');
+
+                        if (bodySections.length > 0) {
+                            options += '<optgroup label="Body">';
+                            bodySections.forEach(z => {
+                                options += `<option value="${z.id}">${z.name}</option>`;
+                            });
+                            options += '</optgroup>';
+                        }
+
+                        if (doorSections.length > 0) {
+                            options += '<optgroup label="Door">';
+                            doorSections.forEach(z => {
+                                options += `<option value="${z.id}">${z.name}</option>`;
+                            });
+                            options += '</optgroup>';
+                        }
+
+                        zoneSelect.html(options);
+                        zoneHint.text('');
+                    }
+                }
+            })
+            .catch(error => {
+                console.error(`Error loading zones for ${temp}/${section}:`, error);
+                completed++;
+            });
+    });
+}
 
 // Load all records
 function loadRecords() {
@@ -86,6 +201,12 @@ function getTempBadge(temp) {
 
 // Get location display string
 function getLocationDisplay(record) {
+    // Check for new zone-based location first
+    if (record.fridge_region_id && zoneCache[record.fridge_region_id]) {
+        const zone = zoneCache[record.fridge_region_id];
+        return `<span class="badge bg-info">${zone.name}</span>`;
+    }
+    // Fallback to legacy row/column (for old records)
     if (record.storage_section && record.storage_row !== null && record.storage_column !== null) {
         return `${record.storage_section.charAt(0).toUpperCase()}${record.storage_section.slice(1)}: R${record.storage_row} C${record.storage_column}`;
     }
@@ -120,6 +241,7 @@ function showAddRecordModal() {
     $('#recordModalTitle').text('Add New Record');
     $('#recordForm')[0].reset();
     $('#recordId').val('');
+    loadZonesForTemperature(); // Load zones for default temperature
     $('#recordModal').modal('show');
 }
 
@@ -147,19 +269,100 @@ function editRecord(id) {
             $('#solubility').val(record.solubility || '');
             $('#preparationTime').val(record.preparation_time || '');
             $('#expirationTime').val(record.expiration_time || '');
-            $('#storageSection').val(record.storage_section || '');
-            $('#storageRow').val(record.storage_row || '');
-            $('#storageColumn').val(record.storage_column || '');
             $('#aliquotVolume').val(record.aliquot_volume || '');
             $('#notes').val(record.notes || '');
 
-            updateStorageSectionOptions();
+            // Load zones for this temperature, then set the selected zone
+            const temp = record.storage_temp || '4C';
+            const zoneId = record.fridge_region_id;
+
+            // Load zones then set selection
+            loadZonesForTemperatureWithCallback(temp, function() {
+                if (zoneId) {
+                    $('#fridgeZone').val(zoneId);
+                }
+            });
+
             $('#recordModal').modal('show');
         })
         .catch(error => {
             console.error('Error loading record:', error);
             alert('Failed to load record');
         });
+}
+
+// Load zones with callback (for edit form)
+function loadZonesForTemperatureWithCallback(temp, callback) {
+    const zoneSelect = $('#fridgeZone');
+    const zoneHint = $('#zoneHint');
+
+    if (!temp || temp === 'RT') {
+        zoneSelect.html('<option value="">No zones for RT</option>');
+        zoneHint.text('Room temperature items do not have fridge zones');
+        if (callback) callback();
+        return;
+    }
+
+    zoneSelect.html('<option value="">Loading zones...</option>');
+    zoneHint.text('');
+
+    const sections = temp === '-80C' ? ['body'] : ['body', 'door'];
+    let allZones = [];
+    let completed = 0;
+
+    sections.forEach(section => {
+        fetch(`/api/schematic/${temp}/${section}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.zones && data.zones.length > 0) {
+                    data.zones.forEach(zone => {
+                        allZones.push({
+                            id: zone.id,
+                            name: zone.zone_name,
+                            section: section
+                        });
+                    });
+                }
+                completed++;
+
+                if (completed === sections.length) {
+                    if (allZones.length === 0) {
+                        zoneSelect.html('<option value="">No zones configured</option>');
+                        zoneHint.html('Configure zones in <a href="/schematic-layout-builder">Layout Builder</a>');
+                    } else {
+                        let options = '<option value="">Select a zone...</option>';
+
+                        const bodySections = allZones.filter(z => z.section === 'body');
+                        const doorSections = allZones.filter(z => z.section === 'door');
+
+                        if (bodySections.length > 0) {
+                            options += '<optgroup label="Body">';
+                            bodySections.forEach(z => {
+                                options += `<option value="${z.id}">${z.name}</option>`;
+                            });
+                            options += '</optgroup>';
+                        }
+
+                        if (doorSections.length > 0) {
+                            options += '<optgroup label="Door">';
+                            doorSections.forEach(z => {
+                                options += `<option value="${z.id}">${z.name}</option>`;
+                            });
+                            options += '</optgroup>';
+                        }
+
+                        zoneSelect.html(options);
+                        zoneHint.text('');
+                    }
+                    if (callback) callback();
+                }
+            })
+            .catch(error => {
+                console.error(`Error loading zones for ${temp}/${section}:`, error);
+                completed++;
+                if (completed === sections.length && callback) callback();
+            });
+    });
 }
 
 // Save record (add or update)
@@ -172,13 +375,7 @@ function saveRecord() {
     }
 
     const storageTemp = $('#storageTemp').val();
-    const storageSection = $('#storageSection').val();
-
-    // Validate -80C doesn't have door storage
-    if (storageTemp === '-80C' && storageSection === 'door') {
-        alert('-80°C freezers do not have door storage');
-        return;
-    }
+    const fridgeZoneId = $('#fridgeZone').val();
 
     const data = {
         drug_name: drugName,
@@ -196,9 +393,7 @@ function saveRecord() {
         sterility: $('#sterility').val() || null,
         lot_number: $('#lotNumber').val() || null,
         product_number: $('#productNumber').val() || null,
-        storage_section: storageSection || null,
-        storage_row: $('#storageRow').val() || null,
-        storage_column: $('#storageColumn').val() || null,
+        fridge_region_id: fridgeZoneId ? parseInt(fridgeZoneId) : null,
         aliquot_volume: $('#aliquotVolume').val() || null
     };
 
@@ -258,25 +453,6 @@ function refreshRecords() {
     loadFridgeDisplays();
 }
 
-// Update storage section options based on temperature
-function updateStorageSectionOptions() {
-    const temp = $('#storageTemp').val();
-    const section = $('#storageSection');
-
-    if (temp === '-80C') {
-        // Disable door option for -80C
-        section.html(`
-            <option value="">Not Specified</option>
-            <option value="body">Body</option>
-        `);
-    } else {
-        section.html(`
-            <option value="">Not Specified</option>
-            <option value="body">Body</option>
-            <option value="door">Door</option>
-        `);
-    }
-}
 
 // Load and display fridge schematic layouts
 function loadFridgeDisplays() {
