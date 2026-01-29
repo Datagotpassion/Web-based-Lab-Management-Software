@@ -5,14 +5,28 @@ Main application file with routes and API endpoints
 
 from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for
 from database import Database
+from werkzeug.utils import secure_filename
 import io
+import os
 from datetime import datetime
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'lab-management-secret-key-2026'
+app.config['UPLOAD_FOLDER'] = 'static/fridge_photos'
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 # Initialize database
 db = Database('lab_management.db')
+
+# Ensure upload folder exists
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+
+@app.context_processor
+def inject_settings():
+    """Make settings available to all templates"""
+    settings = db.get_all_settings()
+    return {'lab_settings': settings}
 
 
 @app.route('/')
@@ -455,18 +469,472 @@ def import_export_page():
     return render_template('import_export.html')
 
 
-@app.route('/config')
-def config_page():
-    """Fridge configuration page"""
-    configs = db.get_all_fridge_configs()
-    return render_template('config.html', configs=configs)
+# ========== VISUAL FRIDGE LAYOUT ROUTES ==========
+
+@app.route('/visual-fridge-display')
+def visual_fridge_display():
+    """Visual fridge display page - view and interact with photo-based layouts"""
+    return render_template('visual_fridge_display.html')
+
+
+@app.route('/api/layout/upload', methods=['POST'])
+def upload_layout_photo():
+    """Upload a fridge photo and create layout"""
+    if 'photo' not in request.files:
+        return jsonify({'error': 'No photo uploaded'}), 400
+
+    file = request.files['photo']
+    temp_key = request.form.get('temp_key')
+    section = request.form.get('section')
+
+    if not temp_key or not section:
+        return jsonify({'error': 'Temperature and section are required'}), 400
+
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+
+    allowed_extensions = {'.jpg', '.jpeg', '.png', '.gif'}
+    file_ext = os.path.splitext(file.filename)[1].lower()
+
+    if file_ext not in allowed_extensions:
+        return jsonify({'error': 'Invalid file type. Use JPG, PNG, or GIF'}), 400
+
+    try:
+        # Generate unique filename
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = secure_filename(f'{temp_key}_{section}_{timestamp}{file_ext}')
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+
+        # Save file
+        file.save(filepath)
+
+        # Create or update layout in database
+        layout_id = db.create_or_update_layout(temp_key, section, filename)
+
+        return jsonify({
+            'success': True,
+            'layout_id': layout_id,
+            'filename': filename
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/layout/<int:layout_id>/regions', methods=['GET'])
+def get_layout_regions(layout_id):
+    """Get all regions for a layout"""
+    try:
+        regions = db.get_regions_for_layout(layout_id)
+        return jsonify([dict(r) for r in regions])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/layout/<int:layout_id>/region', methods=['POST'])
+def create_region(layout_id):
+    """Create a new region on a layout"""
+    data = request.json
+
+    required = ['region_name', 'x', 'y', 'width', 'height']
+    if not all(field in data for field in required):
+        return jsonify({'error': 'Missing required fields'}), 400
+
+    try:
+        region_id = db.create_region(
+            layout_id,
+            data['region_name'],
+            int(data['x']),
+            int(data['y']),
+            int(data['width']),
+            int(data['height'])
+        )
+        return jsonify({'success': True, 'region_id': region_id})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/region/<int:region_id>', methods=['PUT'])
+def update_region(region_id):
+    """Update a region"""
+    data = request.json
+
+    required = ['region_name', 'x', 'y', 'width', 'height']
+    if not all(field in data for field in required):
+        return jsonify({'error': 'Missing required fields'}), 400
+
+    try:
+        db.update_region(
+            region_id,
+            data['region_name'],
+            int(data['x']),
+            int(data['y']),
+            int(data['width']),
+            int(data['height'])
+        )
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/region/<int:region_id>', methods=['DELETE'])
+def delete_region(region_id):
+    """Delete a region"""
+    try:
+        db.delete_region(region_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/region/<int:region_id>/items', methods=['GET'])
+def get_region_items(region_id):
+    """Get all items in a region"""
+    try:
+        items = db.get_items_in_region(region_id)
+        return jsonify([dict(item) for item in items])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/region/<int:region_id>/assign', methods=['POST'])
+def assign_to_region(region_id):
+    """Assign an item to a region"""
+    data = request.json
+    drug_id = data.get('drug_id')
+
+    if not drug_id:
+        return jsonify({'error': 'drug_id is required'}), 400
+
+    try:
+        db.assign_item_to_region(drug_id, region_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/layout/<temp_key>/<section>', methods=['GET'])
+def get_layout_by_temp_section(temp_key, section):
+    """Get layout and regions for a specific temp/section"""
+    try:
+        layout = db.get_layout(temp_key, section)
+        if not layout:
+            return jsonify({'error': 'Layout not found'}), 404
+
+        regions = db.get_regions_for_layout(layout['id'])
+        occupancy = db.get_region_occupancy(layout['id'])
+
+        return jsonify({
+            'layout': dict(layout),
+            'regions': [dict(r) for r in regions],
+            'occupancy': [dict(o) for o in occupancy]
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ========== SCHEMATIC LAYOUT ROUTES ==========
+
+@app.route('/schematic-layout-builder')
+def schematic_layout_builder():
+    """Schematic fridge layout builder page"""
+    return render_template('schematic_layout_builder.html')
+
+
+@app.route('/api/schematic/<temp_key>/<section>', methods=['GET'])
+def get_schematic_layout(temp_key, section):
+    """Get schematic layout and zones for a specific temp/section"""
+    try:
+        layout = db.get_schematic_layout(temp_key, section)
+        if not layout:
+            return jsonify({'layout': None, 'zones': [], 'occupancy': []})
+
+        zones = db.get_schematic_zones(layout['id'])
+        occupancy = db.get_zone_occupancy(layout['id'])
+
+        return jsonify({
+            'layout': dict(layout),
+            'zones': [dict(z) for z in zones],
+            'occupancy': [dict(o) for o in occupancy]
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/schematic/create', methods=['POST'])
+def create_schematic_layout():
+    """Create a new schematic layout"""
+    data = request.json
+    temp_key = data.get('temp_key')
+    section = data.get('section')
+    layout_name = data.get('layout_name')
+
+    if not temp_key or not section:
+        return jsonify({'error': 'temp_key and section are required'}), 400
+
+    try:
+        layout_id = db.create_schematic_layout(temp_key, section, layout_name)
+        return jsonify({'success': True, 'layout_id': layout_id})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/schematic/<int:layout_id>/zones', methods=['POST'])
+def save_schematic_zones(layout_id):
+    """Save all zones for a schematic layout (replaces existing)"""
+    data = request.json
+    zones = data.get('zones', [])
+
+    try:
+        # Clear existing zones
+        db.clear_schematic_zones(layout_id)
+
+        # Add new zones
+        for zone in zones:
+            db.add_schematic_zone(
+                layout_id,
+                zone['zone_name'],
+                zone['row_index'],
+                zone['col_index'],
+                zone.get('col_span', 1),
+                zone.get('row_span', 1),
+                zone.get('color', '#e3f2fd')
+            )
+
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/schematic/upload-reference', methods=['POST'])
+def upload_schematic_reference():
+    """Upload a reference photo for schematic layout"""
+    if 'photo' not in request.files:
+        return jsonify({'error': 'No photo uploaded'}), 400
+
+    file = request.files['photo']
+    layout_id = request.form.get('layout_id')
+
+    if not layout_id:
+        return jsonify({'error': 'layout_id is required'}), 400
+
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+
+    allowed_extensions = {'.jpg', '.jpeg', '.png', '.gif'}
+    file_ext = os.path.splitext(file.filename)[1].lower()
+
+    if file_ext not in allowed_extensions:
+        return jsonify({'error': 'Invalid file type'}), 400
+
+    try:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = secure_filename(f'ref_{layout_id}_{timestamp}{file_ext}')
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+
+        # Update layout with reference photo
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE fridge_schematic_layouts
+            SET reference_photo = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (filename, layout_id))
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True, 'filename': filename})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/schematic/zone/<int:zone_id>/items', methods=['GET'])
+def get_schematic_zone_items(zone_id):
+    """Get all items in a schematic zone"""
+    try:
+        items = db.get_items_in_zone(zone_id)
+        return jsonify([dict(item) for item in items])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/schematic/zone/<int:zone_id>/assign', methods=['POST'])
+def assign_to_schematic_zone(zone_id):
+    """Assign an item to a schematic zone"""
+    data = request.json
+    drug_id = data.get('drug_id')
+
+    if not drug_id:
+        return jsonify({'error': 'drug_id is required'}), 400
+
+    try:
+        db.assign_item_to_zone(drug_id, zone_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ========== ANTIBODY MANAGEMENT ROUTES ==========
+
+@app.route('/antibodies')
+def antibodies_page():
+    """Antibody management page"""
+    return render_template('antibodies.html')
+
+
+@app.route('/api/antibodies/primary', methods=['GET'])
+def get_primary_antibodies():
+    """Get all primary antibodies"""
+    antibodies = db.get_all_primary_antibodies()
+    return jsonify([dict(ab) for ab in antibodies])
+
+
+@app.route('/api/antibodies/primary/<int:ab_id>', methods=['GET'])
+def get_primary_antibody(ab_id):
+    """Get a single primary antibody"""
+    antibody = db.get_primary_antibody_by_id(ab_id)
+    if antibody:
+        return jsonify(dict(antibody))
+    return jsonify({'error': 'Antibody not found'}), 404
+
+
+@app.route('/api/antibodies/primary', methods=['POST'])
+def add_primary_antibody():
+    """Add a new primary antibody"""
+    data = request.json
+    if not data.get('name'):
+        return jsonify({'error': 'Antibody name is required'}), 400
+
+    try:
+        ab_id = db.add_primary_antibody(data)
+        return jsonify({'success': True, 'id': ab_id})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/antibodies/primary/<int:ab_id>', methods=['PUT'])
+def update_primary_antibody(ab_id):
+    """Update a primary antibody"""
+    data = request.json
+    if not data.get('name'):
+        return jsonify({'error': 'Antibody name is required'}), 400
+
+    try:
+        db.update_primary_antibody(ab_id, data)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/antibodies/primary/<int:ab_id>', methods=['DELETE'])
+def delete_primary_antibody(ab_id):
+    """Delete a primary antibody"""
+    try:
+        db.delete_primary_antibody(ab_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/antibodies/secondary', methods=['GET'])
+def get_secondary_antibodies():
+    """Get all secondary antibodies"""
+    antibodies = db.get_all_secondary_antibodies()
+    return jsonify([dict(ab) for ab in antibodies])
+
+
+@app.route('/api/antibodies/secondary/<int:ab_id>', methods=['GET'])
+def get_secondary_antibody(ab_id):
+    """Get a single secondary antibody"""
+    antibody = db.get_secondary_antibody_by_id(ab_id)
+    if antibody:
+        return jsonify(dict(antibody))
+    return jsonify({'error': 'Antibody not found'}), 404
+
+
+@app.route('/api/antibodies/secondary', methods=['POST'])
+def add_secondary_antibody():
+    """Add a new secondary antibody"""
+    data = request.json
+    if not data.get('name'):
+        return jsonify({'error': 'Antibody name is required'}), 400
+
+    try:
+        ab_id = db.add_secondary_antibody(data)
+        return jsonify({'success': True, 'id': ab_id})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/antibodies/secondary/<int:ab_id>', methods=['PUT'])
+def update_secondary_antibody(ab_id):
+    """Update a secondary antibody"""
+    data = request.json
+    if not data.get('name'):
+        return jsonify({'error': 'Antibody name is required'}), 400
+
+    try:
+        db.update_secondary_antibody(ab_id, data)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/antibodies/secondary/<int:ab_id>', methods=['DELETE'])
+def delete_secondary_antibody(ab_id):
+    """Delete a secondary antibody"""
+    try:
+        db.delete_secondary_antibody(ab_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/antibodies/match/<int:primary_id>', methods=['GET'])
+def find_matching_secondaries(primary_id):
+    """Find secondary antibodies compatible with a given primary"""
+    try:
+        matches = db.find_matching_secondaries(primary_id)
+        return jsonify(matches)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ========== SETTINGS ROUTES ==========
+
+@app.route('/api/settings', methods=['GET'])
+def get_settings():
+    """Get all settings"""
+    settings = db.get_all_settings()
+    return jsonify(settings)
+
+
+@app.route('/api/settings', methods=['POST'])
+def update_settings():
+    """Update settings"""
+    data = request.json
+    try:
+        for key, value in data.items():
+            db.set_setting(key, value)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/settings/<key>', methods=['GET'])
+def get_setting(key):
+    """Get a specific setting"""
+    value = db.get_setting(key)
+    return jsonify({'key': key, 'value': value})
 
 
 if __name__ == '__main__':
     print("="*80)
     print("Lab Management System - Web Interface")
     print("="*80)
-    print("Server starting on http://localhost:5000")
+    print("Server starting on http://0.0.0.0:5000")
     print("Press Ctrl+C to stop the server")
     print("="*80)
-    app.run(debug=True, host='localhost', port=5000)
+    #app.run(debug=True, host='localhost', port=5000)
+    app.run(host='0.0.0.0', port=5000)

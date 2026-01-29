@@ -1,0 +1,529 @@
+{% extends "base.html" %}
+
+{% block title %}Visual Fridge Display - Lab Management System{% endblock %}
+
+{% block extra_css %}
+<style>
+    .fridge-section-card {
+        margin-bottom: 30px;
+    }
+
+    .schematic-container {
+        background-color: #f8f9fa;
+        border: 2px solid #dee2e6;
+        border-radius: 10px;
+        padding: 15px;
+        min-height: 150px;
+    }
+
+    .zone-row {
+        display: flex;
+        flex-wrap: nowrap;
+        margin-bottom: 8px;
+    }
+
+    .zone-cell {
+        flex: 1;
+        border: 2px solid #2c3e50;
+        border-radius: 8px;
+        padding: 15px 10px;
+        margin: 0 4px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        min-height: 90px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+    }
+
+    .zone-cell:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.2);
+    }
+
+    .zone-cell.empty {
+        border-color: #bdc3c7;
+    }
+
+    .zone-cell.occupied {
+        border-color: #27ae60;
+        border-width: 3px;
+    }
+
+    .zone-cell.crowded {
+        border-color: #e74c3c;
+        border-width: 3px;
+    }
+
+    .zone-name {
+        font-weight: bold;
+        font-size: 0.95rem;
+        color: #2c3e50;
+    }
+
+    .zone-count {
+        font-size: 1.5rem;
+        font-weight: bold;
+        margin-top: 5px;
+    }
+
+    .zone-count.empty {
+        color: #95a5a6;
+    }
+
+    .zone-count.occupied {
+        color: #27ae60;
+    }
+
+    .zone-count.crowded {
+        color: #e74c3c;
+    }
+
+    .no-layout-message {
+        text-align: center;
+        padding: 40px 20px;
+        color: #6c757d;
+    }
+
+    .no-layout-message i {
+        font-size: 3rem;
+        margin-bottom: 15px;
+        display: block;
+    }
+
+    .item-card {
+        border-left: 4px solid #3498db;
+        margin-bottom: 10px;
+        transition: all 0.2s;
+    }
+
+    .item-card:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .section-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 15px;
+        padding-bottom: 10px;
+        border-bottom: 2px solid #dee2e6;
+    }
+
+    .temp-header-4c {
+        background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+    }
+
+    .temp-header-20c {
+        background: linear-gradient(135deg, #f39c12 0%, #d68910 100%);
+    }
+
+    .temp-header-80c {
+        background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h2><i class="bi bi-grid-3x3-gap-fill"></i> Visual Fridge Display</h2>
+                <p class="text-muted mb-0">Click on any zone to view or assign items</p>
+            </div>
+            <a href="/schematic-layout-builder" class="btn btn-primary">
+                <i class="bi bi-pencil-square"></i> Edit Layouts
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- 4C Fridge -->
+<div class="card fridge-section-card">
+    <div class="card-header temp-header-4c text-white">
+        <h4 class="mb-0"><i class="bi bi-thermometer-half"></i> 4°C Fridge</h4>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <div class="section-title"><i class="bi bi-box"></i> Body (Main Compartment)</div>
+                <div class="schematic-container" id="display-4C-body">
+                    <div class="no-layout-message">
+                        <i class="bi bi-grid-3x3"></i>
+                        <p>No layout configured</p>
+                        <a href="/schematic-layout-builder" class="btn btn-sm btn-primary">Create Layout</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="section-title"><i class="bi bi-door-open"></i> Door Storage</div>
+                <div class="schematic-container" id="display-4C-door">
+                    <div class="no-layout-message">
+                        <i class="bi bi-grid-3x3"></i>
+                        <p>No layout configured</p>
+                        <a href="/schematic-layout-builder" class="btn btn-sm btn-primary">Create Layout</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- -20C Freezer -->
+<div class="card fridge-section-card">
+    <div class="card-header temp-header-20c text-white">
+        <h4 class="mb-0"><i class="bi bi-thermometer-snow"></i> -20°C Freezer</h4>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <div class="section-title"><i class="bi bi-box"></i> Body (Main Compartment)</div>
+                <div class="schematic-container" id="display--20C-body">
+                    <div class="no-layout-message">
+                        <i class="bi bi-grid-3x3"></i>
+                        <p>No layout configured</p>
+                        <a href="/schematic-layout-builder" class="btn btn-sm btn-primary">Create Layout</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="section-title"><i class="bi bi-door-open"></i> Door Storage</div>
+                <div class="schematic-container" id="display--20C-door">
+                    <div class="no-layout-message">
+                        <i class="bi bi-grid-3x3"></i>
+                        <p>No layout configured</p>
+                        <a href="/schematic-layout-builder" class="btn btn-sm btn-primary">Create Layout</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- -80C Ultra-Low Freezer -->
+<div class="card fridge-section-card">
+    <div class="card-header temp-header-80c text-white">
+        <h4 class="mb-0"><i class="bi bi-snow2"></i> -80°C Ultra-Low Freezer</h4>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-12">
+                <div class="section-title"><i class="bi bi-box"></i> Body (Main Compartment)</div>
+                <div class="schematic-container" id="display--80C-body">
+                    <div class="no-layout-message">
+                        <i class="bi bi-grid-3x3"></i>
+                        <p>No layout configured</p>
+                        <a href="/schematic-layout-builder" class="btn btn-sm btn-primary">Create Layout</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Zone Items Modal -->
+<div class="modal fade" id="zoneModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-folder2-open"></i>
+                    <span id="zoneModalTitle">Zone Items</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Assign Button -->
+                <div class="mb-3">
+                    <button class="btn btn-primary" id="show-assign-btn" onclick="showAssignForm()">
+                        <i class="bi bi-plus-circle"></i> Assign Item to This Zone
+                    </button>
+                </div>
+
+                <!-- Assign Form -->
+                <div id="assign-form" class="card mb-3" style="display: none;">
+                    <div class="card-body">
+                        <div class="row align-items-end">
+                            <div class="col-md-8">
+                                <label class="form-label">Select Item</label>
+                                <select class="form-select" id="assign-item-select">
+                                    <option value="">Choose an item...</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <button class="btn btn-success me-2" onclick="assignItem()">
+                                    <i class="bi bi-check"></i> Assign
+                                </button>
+                                <button class="btn btn-secondary" onclick="hideAssignForm()">
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Items List -->
+                <h6 class="mb-3">
+                    <i class="bi bi-list-ul"></i> Items in this zone
+                    <span class="badge bg-secondary" id="zone-item-count">0</span>
+                </h6>
+                <div id="zone-items-list">
+                    <!-- Items will be loaded here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentZoneId = null;
+let currentZoneName = '';
+let allItems = [];
+
+$(document).ready(function() {
+    loadAllLayouts();
+    loadAllItems();
+});
+
+function loadAllLayouts() {
+    const configs = [
+        { temp: '4C', sections: ['body', 'door'] },
+        { temp: '-20C', sections: ['body', 'door'] },
+        { temp: '-80C', sections: ['body'] }
+    ];
+
+    configs.forEach(config => {
+        config.sections.forEach(section => {
+            loadSchematicLayout(config.temp, section);
+        });
+    });
+}
+
+function loadSchematicLayout(tempKey, section) {
+    $.ajax({
+        url: `/api/schematic/${tempKey}/${section}`,
+        type: 'GET',
+        success: function(data) {
+            if (data.layout && data.zones && data.zones.length > 0) {
+                renderSchematic(tempKey, section, data);
+            }
+        },
+        error: function() {
+            console.log(`No schematic for ${tempKey} ${section}`);
+        }
+    });
+}
+
+function renderSchematic(tempKey, section, data) {
+    const containerId = `display-${tempKey}-${section}`;
+    const $container = $(`#${containerId}`);
+
+    // Create occupancy map
+    const occupancyMap = {};
+    if (data.occupancy) {
+        data.occupancy.forEach(occ => {
+            occupancyMap[occ.id] = occ.item_count;
+        });
+    }
+
+    // Group zones by row
+    const rowMap = {};
+    data.zones.forEach(zone => {
+        if (!rowMap[zone.row_index]) {
+            rowMap[zone.row_index] = [];
+        }
+        rowMap[zone.row_index].push({
+            ...zone,
+            itemCount: occupancyMap[zone.id] || 0
+        });
+    });
+
+    // Build HTML
+    let html = '';
+
+    Object.keys(rowMap).sort((a, b) => a - b).forEach(rowIdx => {
+        const zones = rowMap[rowIdx].sort((a, b) => a.col_index - b.col_index);
+
+        html += '<div class="zone-row">';
+
+        zones.forEach(zone => {
+            const itemCount = zone.itemCount;
+            let statusClass = 'empty';
+            let countClass = 'empty';
+
+            if (itemCount > 0) {
+                statusClass = 'occupied';
+                countClass = 'occupied';
+            }
+            if (itemCount > 3) {
+                statusClass = 'crowded';
+                countClass = 'crowded';
+            }
+
+            const displayCount = itemCount > 0 ? itemCount : '-';
+
+            html += `
+                <div class="zone-cell ${statusClass}"
+                     style="background-color: ${zone.color};"
+                     onclick="showZoneModal(${zone.id}, '${zone.zone_name.replace(/'/g, "\\'")}')">
+                    <span class="zone-name">${zone.zone_name}</span>
+                    <span class="zone-count ${countClass}">${displayCount}</span>
+                </div>
+            `;
+        });
+
+        html += '</div>';
+    });
+
+    $container.html(html);
+}
+
+function loadAllItems() {
+    $.ajax({
+        url: '/api/records',
+        type: 'GET',
+        success: function(items) {
+            allItems = items;
+        }
+    });
+}
+
+function showZoneModal(zoneId, zoneName) {
+    currentZoneId = zoneId;
+    currentZoneName = zoneName;
+    $('#zoneModalTitle').text(zoneName);
+    hideAssignForm();
+    loadZoneItems(zoneId);
+
+    const modal = new bootstrap.Modal(document.getElementById('zoneModal'));
+    modal.show();
+}
+
+function loadZoneItems(zoneId) {
+    $.ajax({
+        url: `/api/schematic/zone/${zoneId}/items`,
+        type: 'GET',
+        success: function(items) {
+            displayZoneItems(items);
+        },
+        error: function() {
+            $('#zone-items-list').html('<p class="text-danger">Failed to load items</p>');
+        }
+    });
+}
+
+function displayZoneItems(items) {
+    const $list = $('#zone-items-list');
+    $list.empty();
+    $('#zone-item-count').text(items.length);
+
+    if (items.length === 0) {
+        $list.html('<p class="text-muted text-center py-3">No items in this zone</p>');
+        return;
+    }
+
+    items.forEach(item => {
+        const concentration = item.stock_concentration && item.stock_unit
+            ? `${item.stock_concentration} ${item.stock_unit}`
+            : 'N/A';
+
+        const $card = $(`
+            <div class="card item-card">
+                <div class="card-body py-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>${item.drug_name}</strong>
+                            <br>
+                            <small class="text-muted">
+                                ${concentration}
+                                ${item.supplier ? ` | ${item.supplier}` : ''}
+                                ${item.lot_number ? ` | Lot: ${item.lot_number}` : ''}
+                            </small>
+                        </div>
+                        <button class="btn btn-sm btn-outline-danger" onclick="removeFromZone(${item.id})" title="Remove from zone">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `);
+
+        $list.append($card);
+    });
+}
+
+function showAssignForm() {
+    // Populate select with unassigned items
+    const $select = $('#assign-item-select');
+    $select.empty().append('<option value="">Choose an item...</option>');
+
+    allItems.forEach(item => {
+        const label = `${item.drug_name} (${item.storage_temp || 'No temp'})`;
+        $select.append(`<option value="${item.id}">${label}</option>`);
+    });
+
+    $('#assign-form').slideDown();
+    $('#show-assign-btn').hide();
+}
+
+function hideAssignForm() {
+    $('#assign-form').slideUp();
+    $('#show-assign-btn').show();
+    $('#assign-item-select').val('');
+}
+
+function assignItem() {
+    const drugId = $('#assign-item-select').val();
+
+    if (!drugId) {
+        alert('Please select an item');
+        return;
+    }
+
+    $.ajax({
+        url: `/api/schematic/zone/${currentZoneId}/assign`,
+        type: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ drug_id: parseInt(drugId) }),
+        success: function() {
+            hideAssignForm();
+            loadZoneItems(currentZoneId);
+            loadAllLayouts(); // Refresh counts
+        },
+        error: function(xhr) {
+            alert('Failed to assign: ' + (xhr.responseJSON?.error || 'Unknown error'));
+        }
+    });
+}
+
+function removeFromZone(drugId) {
+    if (!confirm('Remove this item from the zone?')) {
+        return;
+    }
+
+    // Assign to null (no zone)
+    $.ajax({
+        url: '/api/schematic/zone/0/assign',
+        type: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ drug_id: drugId }),
+        success: function() {
+            loadZoneItems(currentZoneId);
+            loadAllLayouts();
+        },
+        error: function(xhr) {
+            alert('Failed to remove: ' + (xhr.responseJSON?.error || 'Unknown error'));
+        }
+    });
+}
+</script>
+{% endblock %}

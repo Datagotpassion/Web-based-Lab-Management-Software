@@ -1,0 +1,555 @@
+{% extends "base.html" %}
+
+{% block title %}Schematic Layout Builder - Lab Management System{% endblock %}
+
+{% block extra_css %}
+<style>
+    .builder-card {
+        min-height: 500px;
+    }
+
+    .zone-preview {
+        background-color: #f8f9fa;
+        border: 2px dashed #dee2e6;
+        border-radius: 10px;
+        padding: 20px;
+        min-height: 300px;
+    }
+
+    .preview-row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 8px;
+    }
+
+    .preview-zone {
+        flex: 1;
+        padding: 15px 10px;
+        border: 2px solid #2c3e50;
+        border-radius: 8px;
+        text-align: center;
+        min-height: 70px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .preview-zone:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
+
+    .preview-zone.selected {
+        border-color: #3498db;
+        border-width: 3px;
+        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.3);
+    }
+
+    .zone-name {
+        font-weight: 600;
+        font-size: 0.9rem;
+    }
+
+    .preset-btn {
+        margin: 3px;
+    }
+
+    .zone-editor {
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        padding: 15px;
+        margin-top: 15px;
+    }
+
+    .color-swatch {
+        width: 30px;
+        height: 30px;
+        border-radius: 5px;
+        display: inline-block;
+        cursor: pointer;
+        margin: 2px;
+        border: 2px solid transparent;
+    }
+
+    .color-swatch:hover, .color-swatch.selected {
+        border-color: #2c3e50;
+    }
+
+    .no-layout-msg {
+        text-align: center;
+        padding: 60px 20px;
+        color: #6c757d;
+    }
+
+    .no-layout-msg i {
+        font-size: 4rem;
+        margin-bottom: 20px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h2><i class="bi bi-grid-3x3-gap-fill"></i> Schematic Layout Builder</h2>
+        <p class="text-muted">Create and configure fridge/freezer layouts with named zones</p>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Left Panel - Controls -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-sliders"></i> Configuration
+            </div>
+            <div class="card-body">
+                <!-- Temperature Selection -->
+                <div class="mb-3">
+                    <label class="form-label">Temperature</label>
+                    <select class="form-select" id="tempSelect">
+                        <option value="4C">4°C Fridge</option>
+                        <option value="-20C">-20°C Freezer</option>
+                        <option value="-80C">-80°C Ultra-Low Freezer</option>
+                    </select>
+                </div>
+
+                <!-- Section Selection -->
+                <div class="mb-3">
+                    <label class="form-label">Section</label>
+                    <select class="form-select" id="sectionSelect">
+                        <option value="body">Body (Main Compartment)</option>
+                        <option value="door">Door Storage</option>
+                    </select>
+                </div>
+
+                <hr>
+
+                <!-- Quick Presets -->
+                <div class="mb-3">
+                    <label class="form-label">Quick Presets</label>
+                    <div>
+                        <button class="btn btn-outline-secondary btn-sm preset-btn" onclick="applyPreset('5-bins')">5 Door Bins</button>
+                        <button class="btn btn-outline-secondary btn-sm preset-btn" onclick="applyPreset('3-shelves')">3 Shelves</button>
+                        <button class="btn btn-outline-secondary btn-sm preset-btn" onclick="applyPreset('4-shelves')">4 Shelves</button>
+                        <button class="btn btn-outline-secondary btn-sm preset-btn" onclick="applyPreset('2x2')">2x2 Grid</button>
+                        <button class="btn btn-outline-secondary btn-sm preset-btn" onclick="applyPreset('2x3')">2x3 Grid</button>
+                        <button class="btn btn-outline-secondary btn-sm preset-btn" onclick="applyPreset('3x3')">3x3 Grid</button>
+                    </div>
+                </div>
+
+                <hr>
+
+                <!-- Add Row/Zone -->
+                <div class="mb-3">
+                    <label class="form-label">Build Layout</label>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-primary flex-fill" onclick="addRow()">
+                            <i class="bi bi-plus"></i> Add Row
+                        </button>
+                        <button class="btn btn-outline-danger flex-fill" onclick="removeLastRow()">
+                            <i class="bi bi-dash"></i> Remove Row
+                        </button>
+                    </div>
+                </div>
+
+                <hr>
+
+                <!-- Save/Load -->
+                <div class="d-grid gap-2">
+                    <button class="btn btn-success" onclick="saveLayout()">
+                        <i class="bi bi-save"></i> Save Layout
+                    </button>
+                    <button class="btn btn-outline-primary" onclick="loadLayout()">
+                        <i class="bi bi-arrow-clockwise"></i> Reload Layout
+                    </button>
+                    <button class="btn btn-outline-danger" onclick="clearLayout()">
+                        <i class="bi bi-trash"></i> Clear All
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Panel - Preview -->
+    <div class="col-md-8">
+        <div class="card builder-card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-eye"></i> Layout Preview</span>
+                <span class="badge bg-secondary" id="zoneCount">0 zones</span>
+            </div>
+            <div class="card-body">
+                <div class="zone-preview" id="layoutPreview">
+                    <div class="no-layout-msg">
+                        <i class="bi bi-grid-3x3"></i>
+                        <p>Select a preset or add rows to build your layout</p>
+                    </div>
+                </div>
+
+                <!-- Zone Editor (shown when zone is selected) -->
+                <div class="zone-editor" id="zoneEditor" style="display: none;">
+                    <h6><i class="bi bi-pencil"></i> Edit Zone</h6>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label class="form-label">Zone Name</label>
+                            <input type="text" class="form-control" id="zoneName" placeholder="e.g., Top Shelf">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Color</label>
+                            <div id="colorSwatches">
+                                <span class="color-swatch" style="background-color: #e3f2fd;" data-color="#e3f2fd"></span>
+                                <span class="color-swatch" style="background-color: #fff3e0;" data-color="#fff3e0"></span>
+                                <span class="color-swatch" style="background-color: #fce4ec;" data-color="#fce4ec"></span>
+                                <span class="color-swatch" style="background-color: #e8f5e9;" data-color="#e8f5e9"></span>
+                                <span class="color-swatch" style="background-color: #fff8e1;" data-color="#fff8e1"></span>
+                                <span class="color-swatch" style="background-color: #f3e5f5;" data-color="#f3e5f5"></span>
+                                <span class="color-swatch" style="background-color: #e0f7fa;" data-color="#e0f7fa"></span>
+                                <span class="color-swatch" style="background-color: #fafafa;" data-color="#fafafa"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-3 d-flex gap-2">
+                        <button class="btn btn-primary btn-sm" onclick="updateSelectedZone()">
+                            <i class="bi bi-check"></i> Apply
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="addZoneToRow()">
+                            <i class="bi bi-plus"></i> Add Zone to Row
+                        </button>
+                        <button class="btn btn-outline-danger btn-sm" onclick="deleteSelectedZone()">
+                            <i class="bi bi-trash"></i> Delete Zone
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let layoutData = [];  // Array of rows, each row is array of zones
+let selectedZone = null;  // {rowIndex, zoneIndex}
+let currentLayoutId = null;
+
+$(document).ready(function() {
+    // Load existing layout
+    loadLayout();
+
+    // Handle temperature change
+    $('#tempSelect').on('change', function() {
+        updateSectionOptions();
+        loadLayout();
+    });
+
+    $('#sectionSelect').on('change', function() {
+        loadLayout();
+    });
+
+    // Color swatch selection
+    $('#colorSwatches').on('click', '.color-swatch', function() {
+        $('#colorSwatches .color-swatch').removeClass('selected');
+        $(this).addClass('selected');
+    });
+
+    // Zone name input - apply on enter
+    $('#zoneName').on('keypress', function(e) {
+        if (e.which === 13) {
+            updateSelectedZone();
+        }
+    });
+});
+
+function updateSectionOptions() {
+    const temp = $('#tempSelect').val();
+    const section = $('#sectionSelect');
+
+    if (temp === '-80C') {
+        section.html('<option value="body">Body (Main Compartment)</option>');
+    } else {
+        section.html(`
+            <option value="body">Body (Main Compartment)</option>
+            <option value="door">Door Storage</option>
+        `);
+    }
+}
+
+function loadLayout() {
+    const temp = $('#tempSelect').val();
+    const section = $('#sectionSelect').val();
+
+    $.ajax({
+        url: `/api/schematic/${temp}/${section}`,
+        type: 'GET',
+        success: function(data) {
+            if (data.layout) {
+                currentLayoutId = data.layout.id;
+            } else {
+                currentLayoutId = null;
+            }
+
+            if (data.zones && data.zones.length > 0) {
+                // Convert zones to layoutData format
+                layoutData = [];
+                const rowMap = {};
+
+                data.zones.forEach(zone => {
+                    if (!rowMap[zone.row_index]) {
+                        rowMap[zone.row_index] = [];
+                    }
+                    rowMap[zone.row_index].push({
+                        name: zone.zone_name,
+                        color: zone.color || '#e3f2fd'
+                    });
+                });
+
+                // Sort rows and convert to array
+                Object.keys(rowMap).sort((a, b) => a - b).forEach(rowIdx => {
+                    layoutData.push(rowMap[rowIdx]);
+                });
+            } else {
+                layoutData = [];
+            }
+
+            renderPreview();
+        },
+        error: function() {
+            layoutData = [];
+            currentLayoutId = null;
+            renderPreview();
+        }
+    });
+}
+
+function renderPreview() {
+    const preview = $('#layoutPreview');
+    preview.empty();
+    selectedZone = null;
+    $('#zoneEditor').hide();
+
+    if (layoutData.length === 0) {
+        preview.html(`
+            <div class="no-layout-msg">
+                <i class="bi bi-grid-3x3"></i>
+                <p>Select a preset or add rows to build your layout</p>
+            </div>
+        `);
+        $('#zoneCount').text('0 zones');
+        return;
+    }
+
+    let totalZones = 0;
+
+    layoutData.forEach((row, rowIndex) => {
+        const rowDiv = $('<div class="preview-row"></div>');
+
+        row.forEach((zone, zoneIndex) => {
+            totalZones++;
+            const zoneDiv = $(`
+                <div class="preview-zone"
+                     style="background-color: ${zone.color};"
+                     data-row="${rowIndex}"
+                     data-zone="${zoneIndex}">
+                    <span class="zone-name">${zone.name}</span>
+                </div>
+            `);
+
+            zoneDiv.on('click', function() {
+                selectZone(rowIndex, zoneIndex);
+            });
+
+            rowDiv.append(zoneDiv);
+        });
+
+        preview.append(rowDiv);
+    });
+
+    $('#zoneCount').text(`${totalZones} zone${totalZones !== 1 ? 's' : ''}`);
+}
+
+function selectZone(rowIndex, zoneIndex) {
+    // Deselect previous
+    $('.preview-zone').removeClass('selected');
+
+    // Select new
+    selectedZone = {rowIndex, zoneIndex};
+    $(`.preview-zone[data-row="${rowIndex}"][data-zone="${zoneIndex}"]`).addClass('selected');
+
+    // Show editor
+    const zone = layoutData[rowIndex][zoneIndex];
+    $('#zoneName').val(zone.name);
+    $('#colorSwatches .color-swatch').removeClass('selected');
+    $(`#colorSwatches .color-swatch[data-color="${zone.color}"]`).addClass('selected');
+    $('#zoneEditor').slideDown();
+}
+
+function updateSelectedZone() {
+    if (!selectedZone) return;
+
+    const name = $('#zoneName').val().trim() || 'Zone';
+    const color = $('#colorSwatches .color-swatch.selected').data('color') || '#e3f2fd';
+
+    layoutData[selectedZone.rowIndex][selectedZone.zoneIndex] = {name, color};
+    renderPreview();
+    selectZone(selectedZone.rowIndex, selectedZone.zoneIndex);
+}
+
+function addRow() {
+    layoutData.push([{name: `Row ${layoutData.length + 1}`, color: '#e3f2fd'}]);
+    renderPreview();
+}
+
+function removeLastRow() {
+    if (layoutData.length > 0) {
+        layoutData.pop();
+        renderPreview();
+    }
+}
+
+function addZoneToRow() {
+    if (!selectedZone) {
+        alert('Please select a zone first to add to its row');
+        return;
+    }
+
+    const rowIndex = selectedZone.rowIndex;
+    layoutData[rowIndex].push({
+        name: `Zone ${layoutData[rowIndex].length + 1}`,
+        color: '#e3f2fd'
+    });
+    renderPreview();
+}
+
+function deleteSelectedZone() {
+    if (!selectedZone) return;
+
+    const {rowIndex, zoneIndex} = selectedZone;
+
+    if (layoutData[rowIndex].length === 1) {
+        // Remove entire row if only one zone
+        layoutData.splice(rowIndex, 1);
+    } else {
+        layoutData[rowIndex].splice(zoneIndex, 1);
+    }
+
+    selectedZone = null;
+    renderPreview();
+}
+
+function clearLayout() {
+    if (confirm('Clear all zones? This cannot be undone until you reload.')) {
+        layoutData = [];
+        renderPreview();
+    }
+}
+
+function applyPreset(preset) {
+    switch(preset) {
+        case '5-bins':
+            layoutData = [
+                [{name: 'Bin 1', color: '#e3f2fd'}],
+                [{name: 'Bin 2', color: '#fff3e0'}],
+                [{name: 'Bin 3', color: '#e8f5e9'}],
+                [{name: 'Bin 4', color: '#fce4ec'}],
+                [{name: 'Bin 5', color: '#fff8e1'}]
+            ];
+            break;
+        case '3-shelves':
+            layoutData = [
+                [{name: 'Top Shelf', color: '#e3f2fd'}],
+                [{name: 'Middle Shelf', color: '#fff3e0'}],
+                [{name: 'Bottom Shelf', color: '#e8f5e9'}]
+            ];
+            break;
+        case '4-shelves':
+            layoutData = [
+                [{name: 'Shelf 1', color: '#e3f2fd'}],
+                [{name: 'Shelf 2', color: '#fff3e0'}],
+                [{name: 'Shelf 3', color: '#e8f5e9'}],
+                [{name: 'Shelf 4', color: '#fce4ec'}]
+            ];
+            break;
+        case '2x2':
+            layoutData = [
+                [{name: 'Top Left', color: '#e3f2fd'}, {name: 'Top Right', color: '#fff3e0'}],
+                [{name: 'Bottom Left', color: '#e8f5e9'}, {name: 'Bottom Right', color: '#fce4ec'}]
+            ];
+            break;
+        case '2x3':
+            layoutData = [
+                [{name: 'A1', color: '#e3f2fd'}, {name: 'A2', color: '#fff3e0'}, {name: 'A3', color: '#e8f5e9'}],
+                [{name: 'B1', color: '#fce4ec'}, {name: 'B2', color: '#fff8e1'}, {name: 'B3', color: '#f3e5f5'}]
+            ];
+            break;
+        case '3x3':
+            layoutData = [
+                [{name: 'A1', color: '#e3f2fd'}, {name: 'A2', color: '#fff3e0'}, {name: 'A3', color: '#e8f5e9'}],
+                [{name: 'B1', color: '#fce4ec'}, {name: 'B2', color: '#fff8e1'}, {name: 'B3', color: '#f3e5f5'}],
+                [{name: 'C1', color: '#e0f7fa'}, {name: 'C2', color: '#fafafa'}, {name: 'C3', color: '#e3f2fd'}]
+            ];
+            break;
+    }
+    renderPreview();
+}
+
+function saveLayout() {
+    const temp = $('#tempSelect').val();
+    const section = $('#sectionSelect').val();
+
+    if (layoutData.length === 0) {
+        alert('Please create a layout first');
+        return;
+    }
+
+    // First, create or get layout
+    $.ajax({
+        url: '/api/schematic/create',
+        type: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({
+            temp_key: temp,
+            section: section,
+            layout_name: `${temp} ${section}`
+        }),
+        success: function(result) {
+            const layoutId = result.layout_id;
+
+            // Convert layoutData to zones format
+            const zones = [];
+            layoutData.forEach((row, rowIndex) => {
+                row.forEach((zone, colIndex) => {
+                    zones.push({
+                        zone_name: zone.name,
+                        row_index: rowIndex,
+                        col_index: colIndex,
+                        color: zone.color
+                    });
+                });
+            });
+
+            // Save zones
+            $.ajax({
+                url: `/api/schematic/${layoutId}/zones`,
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({zones: zones}),
+                success: function() {
+                    alert('Layout saved successfully!');
+                    currentLayoutId = layoutId;
+                },
+                error: function(xhr) {
+                    alert('Failed to save zones: ' + (xhr.responseJSON?.error || 'Unknown error'));
+                }
+            });
+        },
+        error: function(xhr) {
+            alert('Failed to create layout: ' + (xhr.responseJSON?.error || 'Unknown error'));
+        }
+    });
+}
+</script>
+{% endblock %}

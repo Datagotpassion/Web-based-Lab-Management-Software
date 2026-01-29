@@ -88,15 +88,15 @@
                     <input type="hidden" id="recordId">
 
                     <div class="row">
-                        <div class="col-md-6 mb-3">
+                        <div class="col-md-5 mb-3">
                             <label for="drugName" class="form-label">Drug Name *</label>
                             <input type="text" class="form-control" id="drugName" required>
                         </div>
-                        <div class="col-md-3 mb-3">
-                            <label for="stockConcentration" class="form-label">Stock Concentration</label>
+                        <div class="col-md-2 mb-3">
+                            <label for="stockConcentration" class="form-label">Stock Conc.</label>
                             <input type="number" step="any" class="form-control" id="stockConcentration">
                         </div>
-                        <div class="col-md-3 mb-3">
+                        <div class="col-md-2 mb-3">
                             <label for="stockUnit" class="form-label">Unit</label>
                             <select class="form-select" id="stockUnit">
                                 <option value="µM">µM</option>
@@ -108,6 +108,10 @@
                                 <option value="%">%</option>
                                 <option value="X">X</option>
                             </select>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label for="aliquotVolume" class="form-label">Aliquot Volume</label>
+                            <input type="text" class="form-control" id="aliquotVolume" placeholder="e.g., 50 µL, 1 mL">
                         </div>
                     </div>
 

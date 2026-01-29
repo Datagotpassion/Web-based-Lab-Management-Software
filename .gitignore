@@ -33,3 +33,9 @@ htmlcov/
 
 # Logs
 *.log
+
+# User uploaded photos
+static/fridge_photos/
+*.jpeg
+*.jpg
+*.png

@@ -1,0 +1,982 @@
+{% extends "base.html" %}
+
+{% block title %}Antibody Management - Lab Management System{% endblock %}
+
+{% block extra_css %}
+<style>
+    .nav-tabs .nav-link {
+        color: #2c3e50;
+        font-weight: 600;
+    }
+    .nav-tabs .nav-link.active {
+        color: #3498db;
+        border-bottom: 3px solid #3498db;
+    }
+    .ab-card {
+        border-left: 4px solid #3498db;
+        margin-bottom: 10px;
+        transition: all 0.2s;
+    }
+    .ab-card:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .ab-card.primary {
+        border-left-color: #9b59b6;
+    }
+    .ab-card.secondary {
+        border-left-color: #27ae60;
+    }
+    .host-badge {
+        background-color: #e74c3c;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 0.75rem;
+    }
+    .target-badge {
+        background-color: #3498db;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 0.75rem;
+    }
+    .conjugate-badge {
+        background-color: #27ae60;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 0.75rem;
+    }
+    .isotype-badge {
+        background-color: #f39c12;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 0.75rem;
+    }
+    .match-card {
+        border-left: 4px solid #27ae60;
+        margin-bottom: 8px;
+    }
+    .match-score {
+        font-size: 1.2rem;
+        font-weight: bold;
+        color: #27ae60;
+    }
+    .match-reason {
+        font-size: 0.75rem;
+        color: #6c757d;
+    }
+    .filter-row {
+        background-color: #f8f9fa;
+        padding: 10px;
+        border-radius: 8px;
+        margin-bottom: 15px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h2><i class="bi bi-virus"></i> Antibody Management</h2>
+                <p class="text-muted mb-0">Track primary and secondary antibodies with compatibility matching</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tabs -->
+<ul class="nav nav-tabs mb-4" id="antibodyTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="primary-tab" data-bs-toggle="tab" data-bs-target="#primary" type="button">
+            <i class="bi bi-1-circle"></i> Primary Antibodies
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="secondary-tab" data-bs-toggle="tab" data-bs-target="#secondary" type="button">
+            <i class="bi bi-2-circle"></i> Secondary Antibodies
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="matcher-tab" data-bs-toggle="tab" data-bs-target="#matcher" type="button">
+            <i class="bi bi-link-45deg"></i> Matching Tool
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content" id="antibodyTabContent">
+    <!-- Primary Antibodies Tab -->
+    <div class="tab-pane fade show active" id="primary" role="tabpanel">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-list"></i> Primary Antibodies</span>
+                <button class="btn btn-primary btn-sm" onclick="showAddPrimaryModal()">
+                    <i class="bi bi-plus"></i> Add Primary
+                </button>
+            </div>
+            <div class="card-body">
+                <!-- Filters -->
+                <div class="filter-row">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <input type="text" class="form-control form-control-sm" id="primarySearch" placeholder="Search by name or target...">
+                        </div>
+                        <div class="col-md-3">
+                            <select class="form-select form-select-sm" id="primaryHostFilter">
+                                <option value="">All Host Species</option>
+                                <option value="Mouse">Mouse</option>
+                                <option value="Rabbit">Rabbit</option>
+                                <option value="Goat">Goat</option>
+                                <option value="Rat">Rat</option>
+                                <option value="Chicken">Chicken</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <select class="form-select form-select-sm" id="primaryClonalityFilter">
+                                <option value="">All Clonality</option>
+                                <option value="Monoclonal">Monoclonal</option>
+                                <option value="Polyclonal">Polyclonal</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <button class="btn btn-outline-secondary btn-sm w-100" onclick="loadPrimaryAntibodies()">
+                                <i class="bi bi-arrow-clockwise"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="primaryList">
+                    <!-- Primary antibodies loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Secondary Antibodies Tab -->
+    <div class="tab-pane fade" id="secondary" role="tabpanel">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-list"></i> Secondary Antibodies</span>
+                <button class="btn btn-success btn-sm" onclick="showAddSecondaryModal()">
+                    <i class="bi bi-plus"></i> Add Secondary
+                </button>
+            </div>
+            <div class="card-body">
+                <!-- Filters -->
+                <div class="filter-row">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <input type="text" class="form-control form-control-sm" id="secondarySearch" placeholder="Search...">
+                        </div>
+                        <div class="col-md-2">
+                            <select class="form-select form-select-sm" id="secondaryTargetFilter">
+                                <option value="">All Targets</option>
+                                <option value="Mouse">Anti-Mouse</option>
+                                <option value="Rabbit">Anti-Rabbit</option>
+                                <option value="Goat">Anti-Goat</option>
+                                <option value="Rat">Anti-Rat</option>
+                                <option value="Chicken">Anti-Chicken</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <select class="form-select form-select-sm" id="secondaryConjugateFilter">
+                                <option value="">All Conjugates</option>
+                                <option value="Alexa Fluor 488">AF488</option>
+                                <option value="Alexa Fluor 594">AF594</option>
+                                <option value="Alexa Fluor 647">AF647</option>
+                                <option value="FITC">FITC</option>
+                                <option value="PE">PE</option>
+                                <option value="HRP">HRP</option>
+                                <option value="Biotin">Biotin</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <select class="form-select form-select-sm" id="secondaryFormatFilter">
+                                <option value="">All Formats</option>
+                                <option value="Whole IgG">Whole IgG</option>
+                                <option value="F(ab')2">F(ab')2</option>
+                                <option value="F(ab)">F(ab)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <button class="btn btn-outline-secondary btn-sm w-100" onclick="loadSecondaryAntibodies()">
+                                <i class="bi bi-arrow-clockwise"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="secondaryList">
+                    <!-- Secondary antibodies loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Matching Tool Tab -->
+    <div class="tab-pane fade" id="matcher" role="tabpanel">
+        <div class="row">
+            <div class="col-md-5">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <i class="bi bi-1-circle"></i> Select Primary Antibody
+                    </div>
+                    <div class="card-body">
+                        <select class="form-select mb-3" id="matchPrimarySelect">
+                            <option value="">Choose a primary antibody...</option>
+                        </select>
+                        <div id="selectedPrimaryInfo" style="display: none;">
+                            <h6>Selected Primary:</h6>
+                            <div id="selectedPrimaryDetails" class="p-3 bg-light rounded"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-7">
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        <i class="bi bi-2-circle"></i> Compatible Secondaries
+                    </div>
+                    <div class="card-body">
+                        <div id="matchResults">
+                            <p class="text-muted text-center py-4">
+                                <i class="bi bi-arrow-left"></i> Select a primary antibody to find compatible secondaries
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Primary Antibody Modal -->
+<div class="modal fade" id="primaryModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="primaryModalTitle">Add Primary Antibody</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="primaryForm">
+                    <input type="hidden" id="primaryId">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Name *</label>
+                            <input type="text" class="form-control" id="primaryName" required placeholder="e.g., Anti-CD4">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Target Protein</label>
+                            <input type="text" class="form-control" id="primaryTarget" placeholder="e.g., CD4">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Host Species</label>
+                            <select class="form-select" id="primaryHost">
+                                <option value="">Select...</option>
+                                <option value="Mouse">Mouse</option>
+                                <option value="Rabbit">Rabbit</option>
+                                <option value="Goat">Goat</option>
+                                <option value="Rat">Rat</option>
+                                <option value="Chicken">Chicken</option>
+                                <option value="Hamster">Hamster</option>
+                                <option value="Guinea Pig">Guinea Pig</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Clonality</label>
+                            <select class="form-select" id="primaryClonality">
+                                <option value="">Select...</option>
+                                <option value="Monoclonal">Monoclonal</option>
+                                <option value="Polyclonal">Polyclonal</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Isotype</label>
+                            <select class="form-select" id="primaryIsotype">
+                                <option value="">Select...</option>
+                                <option value="IgG">IgG</option>
+                                <option value="IgG1">IgG1</option>
+                                <option value="IgG2a">IgG2a</option>
+                                <option value="IgG2b">IgG2b</option>
+                                <option value="IgG2c">IgG2c</option>
+                                <option value="IgG3">IgG3</option>
+                                <option value="IgM">IgM</option>
+                                <option value="IgA">IgA</option>
+                                <option value="IgY">IgY</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Clone Number</label>
+                            <input type="text" class="form-control" id="primaryClone" placeholder="e.g., GK1.5">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Supplier</label>
+                            <input type="text" class="form-control" id="primarySupplier">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Catalog #</label>
+                            <input type="text" class="form-control" id="primaryCatalog">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Lot Number</label>
+                            <input type="text" class="form-control" id="primaryLot">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Applications</label>
+                            <input type="text" class="form-control" id="primaryApplications" placeholder="IF, WB, IHC, FC">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Fixation Compatibility</label>
+                            <input type="text" class="form-control" id="primaryFixation" placeholder="PFA, Methanol">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Dilution IF</label>
+                            <input type="text" class="form-control" id="primaryDilutionIF" placeholder="1:200">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Dilution WB</label>
+                            <input type="text" class="form-control" id="primaryDilutionWB" placeholder="1:1000">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Dilution IHC</label>
+                            <input type="text" class="form-control" id="primaryDilutionIHC" placeholder="1:100">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Validated</label>
+                            <select class="form-select" id="primaryValidated">
+                                <option value="">Not specified</option>
+                                <option value="Yes">Yes</option>
+                                <option value="No">No</option>
+                                <option value="In Progress">In Progress</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Storage Temp</label>
+                            <select class="form-select" id="primaryStorageTemp">
+                                <option value="4C">4°C</option>
+                                <option value="-20C">-20°C</option>
+                                <option value="-80C">-80°C</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Stock Concentration</label>
+                            <input type="text" class="form-control" id="primaryStockConc" placeholder="e.g., 1 mg/mL">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Aliquot Volume</label>
+                            <input type="text" class="form-control" id="primaryAliquot" placeholder="e.g., 50 µL">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" id="primaryNotes" rows="2"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="savePrimary()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Secondary Antibody Modal -->
+<div class="modal fade" id="secondaryModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title" id="secondaryModalTitle">Add Secondary Antibody</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="secondaryForm">
+                    <input type="hidden" id="secondaryId">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Name *</label>
+                            <input type="text" class="form-control" id="secondaryName" required placeholder="e.g., Goat anti-Mouse IgG">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Conjugate</label>
+                            <select class="form-select" id="secondaryConjugate">
+                                <option value="">Select...</option>
+                                <option value="Alexa Fluor 488">Alexa Fluor 488</option>
+                                <option value="Alexa Fluor 555">Alexa Fluor 555</option>
+                                <option value="Alexa Fluor 594">Alexa Fluor 594</option>
+                                <option value="Alexa Fluor 647">Alexa Fluor 647</option>
+                                <option value="Alexa Fluor 680">Alexa Fluor 680</option>
+                                <option value="Alexa Fluor 750">Alexa Fluor 750</option>
+                                <option value="FITC">FITC</option>
+                                <option value="PE">PE</option>
+                                <option value="APC">APC</option>
+                                <option value="Cy3">Cy3</option>
+                                <option value="Cy5">Cy5</option>
+                                <option value="HRP">HRP</option>
+                                <option value="AP">AP</option>
+                                <option value="Biotin">Biotin</option>
+                                <option value="DyLight 488">DyLight 488</option>
+                                <option value="DyLight 594">DyLight 594</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Target Species (Anti-)</label>
+                            <select class="form-select" id="secondaryTargetSpecies">
+                                <option value="">Select...</option>
+                                <option value="Mouse">Mouse</option>
+                                <option value="Rabbit">Rabbit</option>
+                                <option value="Goat">Goat</option>
+                                <option value="Rat">Rat</option>
+                                <option value="Chicken">Chicken</option>
+                                <option value="Hamster">Hamster</option>
+                                <option value="Guinea Pig">Guinea Pig</option>
+                                <option value="Human">Human</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Target Isotype</label>
+                            <select class="form-select" id="secondaryTargetIsotype">
+                                <option value="">Select...</option>
+                                <option value="IgG (H+L)">IgG (H+L)</option>
+                                <option value="IgG">IgG</option>
+                                <option value="IgG1">IgG1</option>
+                                <option value="IgG2a">IgG2a</option>
+                                <option value="IgG2b">IgG2b</option>
+                                <option value="IgG2c">IgG2c</option>
+                                <option value="IgG3">IgG3</option>
+                                <option value="IgM">IgM</option>
+                                <option value="IgA">IgA</option>
+                                <option value="IgY">IgY</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Host Species</label>
+                            <select class="form-select" id="secondaryHost">
+                                <option value="">Select...</option>
+                                <option value="Goat">Goat</option>
+                                <option value="Donkey">Donkey</option>
+                                <option value="Rabbit">Rabbit</option>
+                                <option value="Chicken">Chicken</option>
+                                <option value="Sheep">Sheep</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Format</label>
+                            <select class="form-select" id="secondaryFormat">
+                                <option value="">Select...</option>
+                                <option value="Whole IgG">Whole IgG</option>
+                                <option value="F(ab')2">F(ab')2</option>
+                                <option value="F(ab)">F(ab)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Cross-Adsorbed</label>
+                            <select class="form-select" id="secondaryCrossAdsorbed">
+                                <option value="">Not specified</option>
+                                <option value="Yes">Yes</option>
+                                <option value="No">No</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Cross-Adsorbed Against</label>
+                            <input type="text" class="form-control" id="secondaryCrossAdsorbedAgainst" placeholder="Human, Bovine, Horse">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Excitation (nm)</label>
+                            <input type="text" class="form-control" id="secondaryExcitation" placeholder="e.g., 488">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Emission (nm)</label>
+                            <input type="text" class="form-control" id="secondaryEmission" placeholder="e.g., 520">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Supplier</label>
+                            <input type="text" class="form-control" id="secondarySupplier">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Catalog #</label>
+                            <input type="text" class="form-control" id="secondaryCatalog">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Lot Number</label>
+                            <input type="text" class="form-control" id="secondaryLot">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Applications</label>
+                            <input type="text" class="form-control" id="secondaryApplications" placeholder="IF, WB, IHC, FC">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Storage Temp</label>
+                            <select class="form-select" id="secondaryStorageTemp">
+                                <option value="4C">4°C</option>
+                                <option value="-20C">-20°C</option>
+                                <option value="-80C">-80°C</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Dilution IF</label>
+                            <input type="text" class="form-control" id="secondaryDilutionIF" placeholder="1:500">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Dilution WB</label>
+                            <input type="text" class="form-control" id="secondaryDilutionWB" placeholder="1:5000">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Stock Concentration</label>
+                            <input type="text" class="form-control" id="secondaryStockConc" placeholder="e.g., 2 mg/mL">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Aliquot Volume</label>
+                            <input type="text" class="form-control" id="secondaryAliquot" placeholder="e.g., 100 µL">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" id="secondaryNotes" rows="2"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" onclick="saveSecondary()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let primaryAntibodies = [];
+let secondaryAntibodies = [];
+
+$(document).ready(function() {
+    loadPrimaryAntibodies();
+    loadSecondaryAntibodies();
+
+    // Filter listeners
+    $('#primarySearch, #primaryHostFilter, #primaryClonalityFilter').on('input change', filterPrimary);
+    $('#secondarySearch, #secondaryTargetFilter, #secondaryConjugateFilter, #secondaryFormatFilter').on('input change', filterSecondary);
+
+    // Match selector
+    $('#matchPrimarySelect').on('change', function() {
+        const id = $(this).val();
+        if (id) {
+            findMatches(id);
+        } else {
+            $('#selectedPrimaryInfo').hide();
+            $('#matchResults').html('<p class="text-muted text-center py-4"><i class="bi bi-arrow-left"></i> Select a primary antibody to find compatible secondaries</p>');
+        }
+    });
+});
+
+function loadPrimaryAntibodies() {
+    $.get('/api/antibodies/primary', function(data) {
+        primaryAntibodies = data;
+        displayPrimary(data);
+        populateMatchSelect(data);
+    });
+}
+
+function loadSecondaryAntibodies() {
+    $.get('/api/antibodies/secondary', function(data) {
+        secondaryAntibodies = data;
+        displaySecondary(data);
+    });
+}
+
+function displayPrimary(antibodies) {
+    const container = $('#primaryList');
+    container.empty();
+
+    if (antibodies.length === 0) {
+        container.html('<p class="text-muted text-center py-4">No primary antibodies found</p>');
+        return;
+    }
+
+    antibodies.forEach(ab => {
+        const card = $(`
+            <div class="card ab-card primary">
+                <div class="card-body py-2">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong>${ab.name}</strong>
+                            ${ab.target_protein ? `<small class="text-muted"> (${ab.target_protein})</small>` : ''}
+                            <br>
+                            <span class="host-badge">${ab.host_species || 'Unknown host'}</span>
+                            ${ab.isotype ? `<span class="isotype-badge">${ab.isotype}</span>` : ''}
+                            ${ab.clonality ? `<span class="badge bg-secondary">${ab.clonality}</span>` : ''}
+                            ${ab.validated === 'Yes' ? '<span class="badge bg-success">Validated</span>' : ''}
+                            <br>
+                            <small class="text-muted">
+                                ${ab.supplier || ''} ${ab.catalog_number ? `| Cat# ${ab.catalog_number}` : ''}
+                                ${ab.clone_number ? ` | Clone: ${ab.clone_number}` : ''}
+                            </small>
+                        </div>
+                        <div>
+                            <button class="btn btn-sm btn-outline-primary" onclick="editPrimary(${ab.id})">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deletePrimary(${ab.id})">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `);
+        container.append(card);
+    });
+}
+
+function displaySecondary(antibodies) {
+    const container = $('#secondaryList');
+    container.empty();
+
+    if (antibodies.length === 0) {
+        container.html('<p class="text-muted text-center py-4">No secondary antibodies found</p>');
+        return;
+    }
+
+    antibodies.forEach(ab => {
+        const card = $(`
+            <div class="card ab-card secondary">
+                <div class="card-body py-2">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong>${ab.name}</strong>
+                            <br>
+                            <span class="target-badge">Anti-${ab.target_species || '?'}</span>
+                            ${ab.target_isotype ? `<span class="isotype-badge">${ab.target_isotype}</span>` : ''}
+                            ${ab.conjugate ? `<span class="conjugate-badge">${ab.conjugate}</span>` : ''}
+                            ${ab.format ? `<span class="badge bg-secondary">${ab.format}</span>` : ''}
+                            ${ab.cross_adsorbed === 'Yes' ? '<span class="badge bg-info">Cross-adsorbed</span>' : ''}
+                            <br>
+                            <small class="text-muted">
+                                Host: ${ab.host_species || '?'}
+                                ${ab.supplier ? ` | ${ab.supplier}` : ''}
+                                ${ab.catalog_number ? ` | Cat# ${ab.catalog_number}` : ''}
+                            </small>
+                        </div>
+                        <div>
+                            <button class="btn btn-sm btn-outline-success" onclick="editSecondary(${ab.id})">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteSecondary(${ab.id})">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `);
+        container.append(card);
+    });
+}
+
+function filterPrimary() {
+    const search = $('#primarySearch').val().toLowerCase();
+    const host = $('#primaryHostFilter').val();
+    const clonality = $('#primaryClonalityFilter').val();
+
+    let filtered = primaryAntibodies.filter(ab => {
+        const matchSearch = !search ||
+            (ab.name && ab.name.toLowerCase().includes(search)) ||
+            (ab.target_protein && ab.target_protein.toLowerCase().includes(search));
+        const matchHost = !host || ab.host_species === host;
+        const matchClonality = !clonality || ab.clonality === clonality;
+        return matchSearch && matchHost && matchClonality;
+    });
+
+    displayPrimary(filtered);
+}
+
+function filterSecondary() {
+    const search = $('#secondarySearch').val().toLowerCase();
+    const target = $('#secondaryTargetFilter').val();
+    const conjugate = $('#secondaryConjugateFilter').val();
+    const format = $('#secondaryFormatFilter').val();
+
+    let filtered = secondaryAntibodies.filter(ab => {
+        const matchSearch = !search || (ab.name && ab.name.toLowerCase().includes(search));
+        const matchTarget = !target || ab.target_species === target;
+        const matchConjugate = !conjugate || (ab.conjugate && ab.conjugate.includes(conjugate));
+        const matchFormat = !format || ab.format === format;
+        return matchSearch && matchTarget && matchConjugate && matchFormat;
+    });
+
+    displaySecondary(filtered);
+}
+
+function showAddPrimaryModal() {
+    $('#primaryModalTitle').text('Add Primary Antibody');
+    $('#primaryForm')[0].reset();
+    $('#primaryId').val('');
+    $('#primaryModal').modal('show');
+}
+
+function editPrimary(id) {
+    $.get(`/api/antibodies/primary/${id}`, function(ab) {
+        $('#primaryModalTitle').text('Edit Primary Antibody');
+        $('#primaryId').val(ab.id);
+        $('#primaryName').val(ab.name);
+        $('#primaryTarget').val(ab.target_protein);
+        $('#primaryHost').val(ab.host_species);
+        $('#primaryClonality').val(ab.clonality);
+        $('#primaryIsotype').val(ab.isotype);
+        $('#primaryClone').val(ab.clone_number);
+        $('#primarySupplier').val(ab.supplier);
+        $('#primaryCatalog').val(ab.catalog_number);
+        $('#primaryLot').val(ab.lot_number);
+        $('#primaryApplications').val(ab.applications);
+        $('#primaryFixation').val(ab.fixation_compatibility);
+        $('#primaryDilutionIF').val(ab.dilution_if);
+        $('#primaryDilutionWB').val(ab.dilution_wb);
+        $('#primaryDilutionIHC').val(ab.dilution_ihc);
+        $('#primaryStorageTemp').val(ab.storage_temp);
+        $('#primaryStockConc').val(ab.stock_concentration);
+        $('#primaryAliquot').val(ab.aliquot_volume);
+        $('#primaryValidated').val(ab.validated);
+        $('#primaryNotes').val(ab.notes);
+        $('#primaryModal').modal('show');
+    });
+}
+
+function savePrimary() {
+    const id = $('#primaryId').val();
+    const data = {
+        name: $('#primaryName').val(),
+        target_protein: $('#primaryTarget').val(),
+        host_species: $('#primaryHost').val(),
+        clonality: $('#primaryClonality').val(),
+        isotype: $('#primaryIsotype').val(),
+        clone_number: $('#primaryClone').val(),
+        supplier: $('#primarySupplier').val(),
+        catalog_number: $('#primaryCatalog').val(),
+        lot_number: $('#primaryLot').val(),
+        applications: $('#primaryApplications').val(),
+        fixation_compatibility: $('#primaryFixation').val(),
+        dilution_if: $('#primaryDilutionIF').val(),
+        dilution_wb: $('#primaryDilutionWB').val(),
+        dilution_ihc: $('#primaryDilutionIHC').val(),
+        storage_temp: $('#primaryStorageTemp').val(),
+        stock_concentration: $('#primaryStockConc').val(),
+        aliquot_volume: $('#primaryAliquot').val(),
+        validated: $('#primaryValidated').val(),
+        notes: $('#primaryNotes').val()
+    };
+
+    const url = id ? `/api/antibodies/primary/${id}` : '/api/antibodies/primary';
+    const method = id ? 'PUT' : 'POST';
+
+    $.ajax({
+        url: url,
+        type: method,
+        contentType: 'application/json',
+        data: JSON.stringify(data),
+        success: function() {
+            $('#primaryModal').modal('hide');
+            loadPrimaryAntibodies();
+        },
+        error: function(xhr) {
+            alert('Error: ' + (xhr.responseJSON?.error || 'Failed to save'));
+        }
+    });
+}
+
+function deletePrimary(id) {
+    if (!confirm('Delete this primary antibody?')) return;
+
+    $.ajax({
+        url: `/api/antibodies/primary/${id}`,
+        type: 'DELETE',
+        success: function() {
+            loadPrimaryAntibodies();
+        }
+    });
+}
+
+function showAddSecondaryModal() {
+    $('#secondaryModalTitle').text('Add Secondary Antibody');
+    $('#secondaryForm')[0].reset();
+    $('#secondaryId').val('');
+    $('#secondaryModal').modal('show');
+}
+
+function editSecondary(id) {
+    $.get(`/api/antibodies/secondary/${id}`, function(ab) {
+        $('#secondaryModalTitle').text('Edit Secondary Antibody');
+        $('#secondaryId').val(ab.id);
+        $('#secondaryName').val(ab.name);
+        $('#secondaryTargetSpecies').val(ab.target_species);
+        $('#secondaryTargetIsotype').val(ab.target_isotype);
+        $('#secondaryHost').val(ab.host_species);
+        $('#secondaryFormat').val(ab.format);
+        $('#secondaryConjugate').val(ab.conjugate);
+        $('#secondaryExcitation').val(ab.fluorophore_excitation);
+        $('#secondaryEmission').val(ab.fluorophore_emission);
+        $('#secondaryCrossAdsorbed').val(ab.cross_adsorbed);
+        $('#secondaryCrossAdsorbedAgainst').val(ab.cross_adsorbed_against);
+        $('#secondarySupplier').val(ab.supplier);
+        $('#secondaryCatalog').val(ab.catalog_number);
+        $('#secondaryLot').val(ab.lot_number);
+        $('#secondaryApplications').val(ab.applications);
+        $('#secondaryDilutionIF').val(ab.dilution_if);
+        $('#secondaryDilutionWB').val(ab.dilution_wb);
+        $('#secondaryStorageTemp').val(ab.storage_temp);
+        $('#secondaryStockConc').val(ab.stock_concentration);
+        $('#secondaryAliquot').val(ab.aliquot_volume);
+        $('#secondaryNotes').val(ab.notes);
+        $('#secondaryModal').modal('show');
+    });
+}
+
+function saveSecondary() {
+    const id = $('#secondaryId').val();
+    const data = {
+        name: $('#secondaryName').val(),
+        target_species: $('#secondaryTargetSpecies').val(),
+        target_isotype: $('#secondaryTargetIsotype').val(),
+        host_species: $('#secondaryHost').val(),
+        format: $('#secondaryFormat').val(),
+        conjugate: $('#secondaryConjugate').val(),
+        fluorophore_excitation: $('#secondaryExcitation').val(),
+        fluorophore_emission: $('#secondaryEmission').val(),
+        cross_adsorbed: $('#secondaryCrossAdsorbed').val(),
+        cross_adsorbed_against: $('#secondaryCrossAdsorbedAgainst').val(),
+        supplier: $('#secondarySupplier').val(),
+        catalog_number: $('#secondaryCatalog').val(),
+        lot_number: $('#secondaryLot').val(),
+        applications: $('#secondaryApplications').val(),
+        dilution_if: $('#secondaryDilutionIF').val(),
+        dilution_wb: $('#secondaryDilutionWB').val(),
+        storage_temp: $('#secondaryStorageTemp').val(),
+        stock_concentration: $('#secondaryStockConc').val(),
+        aliquot_volume: $('#secondaryAliquot').val(),
+        notes: $('#secondaryNotes').val()
+    };
+
+    const url = id ? `/api/antibodies/secondary/${id}` : '/api/antibodies/secondary';
+    const method = id ? 'PUT' : 'POST';
+
+    $.ajax({
+        url: url,
+        type: method,
+        contentType: 'application/json',
+        data: JSON.stringify(data),
+        success: function() {
+            $('#secondaryModal').modal('hide');
+            loadSecondaryAntibodies();
+        },
+        error: function(xhr) {
+            alert('Error: ' + (xhr.responseJSON?.error || 'Failed to save'));
+        }
+    });
+}
+
+function deleteSecondary(id) {
+    if (!confirm('Delete this secondary antibody?')) return;
+
+    $.ajax({
+        url: `/api/antibodies/secondary/${id}`,
+        type: 'DELETE',
+        success: function() {
+            loadSecondaryAntibodies();
+        }
+    });
+}
+
+function populateMatchSelect(antibodies) {
+    const select = $('#matchPrimarySelect');
+    select.empty().append('<option value="">Choose a primary antibody...</option>');
+
+    antibodies.forEach(ab => {
+        select.append(`<option value="${ab.id}">${ab.name} (${ab.host_species || '?'} ${ab.isotype || ''})</option>`);
+    });
+}
+
+function findMatches(primaryId) {
+    // Show selected primary info
+    const primary = primaryAntibodies.find(ab => ab.id == primaryId);
+    if (primary) {
+        $('#selectedPrimaryDetails').html(`
+            <strong>${primary.name}</strong><br>
+            Host: <span class="host-badge">${primary.host_species || '?'}</span>
+            Isotype: <span class="isotype-badge">${primary.isotype || '?'}</span>
+            ${primary.clonality ? `<br>Clonality: ${primary.clonality}` : ''}
+        `);
+        $('#selectedPrimaryInfo').show();
+    }
+
+    // Find matches
+    $.get(`/api/antibodies/match/${primaryId}`, function(matches) {
+        const container = $('#matchResults');
+        container.empty();
+
+        if (matches.length === 0) {
+            container.html(`
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    No compatible secondary antibodies found.
+                    <br><small>Add secondaries that target <strong>${primary?.host_species || 'this species'}</strong>.</small>
+                </div>
+            `);
+            return;
+        }
+
+        matches.forEach(match => {
+            const ab = match.antibody;
+            const card = $(`
+                <div class="card match-card">
+                    <div class="card-body py-2">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <strong>${ab.name}</strong>
+                                <br>
+                                <span class="target-badge">Anti-${ab.target_species}</span>
+                                ${ab.target_isotype ? `<span class="isotype-badge">${ab.target_isotype}</span>` : ''}
+                                ${ab.conjugate ? `<span class="conjugate-badge">${ab.conjugate}</span>` : ''}
+                                ${ab.format ? `<span class="badge bg-secondary">${ab.format}</span>` : ''}
+                                <br>
+                                <span class="match-reason">${match.reasons.join(' | ')}</span>
+                            </div>
+                            <div class="text-end">
+                                <span class="match-score">${match.score}</span>
+                                <br><small class="text-muted">score</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `);
+            container.append(card);
+        });
+    });
+}
+</script>
+{% endblock %}

@@ -150,6 +150,7 @@ function editRecord(id) {
             $('#storageSection').val(record.storage_section || '');
             $('#storageRow').val(record.storage_row || '');
             $('#storageColumn').val(record.storage_column || '');
+            $('#aliquotVolume').val(record.aliquot_volume || '');
             $('#notes').val(record.notes || '');
 
             updateStorageSectionOptions();
@@ -197,7 +198,8 @@ function saveRecord() {
         product_number: $('#productNumber').val() || null,
         storage_section: storageSection || null,
         storage_row: $('#storageRow').val() || null,
-        storage_column: $('#storageColumn').val() || null
+        storage_column: $('#storageColumn').val() || null,
+        aliquot_volume: $('#aliquotVolume').val() || null
     };
 
     const url = currentEditingId ? `/api/record/${currentEditingId}` : '/api/record';
@@ -276,124 +278,184 @@ function updateStorageSectionOptions() {
     }
 }
 
-// Load and display fridge grids
+// Load and display fridge schematic layouts
 function loadFridgeDisplays() {
     const container = $('#fridgeDisplays');
     container.empty();
 
     const fridges = [
-        {key: '4C', name: '4°C Fridge', color: '#e3f2fd'},
-        {key: '-20C', name: '-20°C Freezer', color: '#fff3e0'},
-        {key: '-80C', name: '-80°C Ultra-Low Freezer', color: '#fce4ec'}
+        {key: '4C', name: '4°C Fridge', sections: ['body', 'door'], headerClass: 'temp-header-4c'},
+        {key: '-20C', name: '-20°C Freezer', sections: ['body', 'door'], headerClass: 'temp-header-20c'},
+        {key: '-80C', name: '-80°C Ultra-Low', sections: ['body'], headerClass: 'temp-header-80c'}
     ];
 
     fridges.forEach(fridge => {
-        fetch(`/api/fridge/grid/${fridge.key}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.config) {
-                    createFridgeGrid(container, fridge, data.config, data.grid_data);
-                }
-            })
-            .catch(error => {
-                console.error(`Error loading fridge ${fridge.key}:`, error);
-            });
+        const fridgeDiv = $(`
+            <div class="fridge-section mb-3" style="background: white; border-radius: 8px; overflow: hidden;">
+                <div class="p-2 text-white text-center" style="background: linear-gradient(135deg, ${getGradientColor(fridge.key)});">
+                    <strong>${fridge.name}</strong>
+                </div>
+                <div class="p-2" id="fridge-content-${fridge.key}">
+                </div>
+            </div>
+        `);
+        container.append(fridgeDiv);
+
+        // Load each section
+        fridge.sections.forEach(section => {
+            loadSchematicSection(fridge.key, section);
+        });
     });
 }
 
-// Create fridge grid visualization
-function createFridgeGrid(container, fridge, config, gridData) {
-    const fridgeDiv = $('<div class="fridge-section mb-4"></div>');
-    fridgeDiv.css('background-color', fridge.color);
-
-    const title = $(`<h5>${fridge.name}</h5>`);
-    fridgeDiv.append(title);
-
-    // Create body section
-    const bodyDiv = $('<div class="mb-3"></div>');
-    bodyDiv.append('<h6>Body</h6>');
-    const bodyGrid = createGridSection(fridge.key, 'body', config.body_rows, config.body_columns, gridData);
-    bodyDiv.append(bodyGrid);
-    fridgeDiv.append(bodyDiv);
-
-    // Create door section (not for -80C)
-    if (fridge.key !== '-80C' && config.door_rows > 0 && config.door_columns > 0) {
-        const doorDiv = $('<div></div>');
-        doorDiv.append('<h6>Door</h6>');
-        const doorGrid = createGridSection(fridge.key, 'door', config.door_rows, config.door_columns, gridData);
-        doorDiv.append(doorGrid);
-        fridgeDiv.append(doorDiv);
-    }
-
-    container.append(fridgeDiv);
+function getGradientColor(tempKey) {
+    const colors = {
+        '4C': '#3498db, #2980b9',
+        '-20C': '#f39c12, #d68910',
+        '-80C': '#9b59b6, #8e44ad'
+    };
+    return colors[tempKey] || '#6c757d, #495057';
 }
 
-// Create grid section (body or door)
-function createGridSection(tempKey, section, rows, cols, gridData) {
-    const gridDiv = $('<div class="fridge-grid"></div>');
+function loadSchematicSection(tempKey, section) {
+    fetch(`/api/schematic/${tempKey}/${section}`)
+        .then(response => response.json())
+        .then(data => {
+            const contentDiv = $(`#fridge-content-${tempKey}`);
 
-    for (let row = 0; row < rows; row++) {
-        const rowDiv = $('<div class="grid-row"></div>');
+            if (data.zones && data.zones.length > 0) {
+                renderSchematicZones(contentDiv, tempKey, section, data);
+            } else {
+                // Show "no layout" message only if no zones exist for this section
+                if (contentDiv.find(`.section-${section}`).length === 0) {
+                    contentDiv.append(`
+                        <div class="section-${section} mb-2">
+                            <small class="text-muted">${section.charAt(0).toUpperCase() + section.slice(1)}: </small>
+                            <a href="/schematic-layout-builder" class="text-primary small">Configure layout</a>
+                        </div>
+                    `);
+                }
+            }
+        })
+        .catch(error => {
+            console.error(`Error loading schematic ${tempKey}/${section}:`, error);
+        });
+}
 
-        for (let col = 0; col < cols; col++) {
-            const key = `${section}-${row}-${col}`;
-            const count = gridData[key] || 0;
+function renderSchematicZones(contentDiv, tempKey, section, data) {
+    // Create occupancy map
+    const occupancyMap = {};
+    if (data.occupancy) {
+        data.occupancy.forEach(occ => {
+            occupancyMap[occ.id] = occ.item_count;
+        });
+    }
 
-            let cellClass = 'grid-cell empty';
-            let cellText = `${section[0].toUpperCase()}${row}${col}`;
+    // Group zones by row
+    const rowMap = {};
+    data.zones.forEach(zone => {
+        if (!rowMap[zone.row_index]) {
+            rowMap[zone.row_index] = [];
+        }
+        rowMap[zone.row_index].push({
+            ...zone,
+            itemCount: occupancyMap[zone.id] || 0
+        });
+    });
 
-            if (count === 1) {
-                cellClass = 'grid-cell single';
-                cellText = `${section[0].toUpperCase()}${row}${col}<br><small>(1 item)</small>`;
-            } else if (count > 1) {
-                cellClass = 'grid-cell multiple';
-                cellText = `${section[0].toUpperCase()}${row}${col}<br><small>(${count} items)</small>`;
+    // Build section HTML
+    const sectionDiv = $(`<div class="section-${section} mb-2"></div>`);
+    sectionDiv.append(`<small class="text-muted d-block mb-1">${section.charAt(0).toUpperCase() + section.slice(1)}:</small>`);
+
+    const zonesContainer = $('<div style="display: flex; flex-direction: column; gap: 3px;"></div>');
+
+    Object.keys(rowMap).sort((a, b) => a - b).forEach(rowIdx => {
+        const zones = rowMap[rowIdx].sort((a, b) => a.col_index - b.col_index);
+        const rowDiv = $('<div style="display: flex; gap: 3px;"></div>');
+
+        zones.forEach(zone => {
+            const itemCount = zone.itemCount;
+            let borderColor = '#bdc3c7';
+            let countColor = '#95a5a6';
+
+            if (itemCount > 0) {
+                borderColor = '#27ae60';
+                countColor = '#27ae60';
+            }
+            if (itemCount > 3) {
+                borderColor = '#e74c3c';
+                countColor = '#e74c3c';
             }
 
-            const cell = $(`<div class="${cellClass}">${cellText}</div>`);
-            cell.on('click', function() {
-                showLocationItems(tempKey, section, row, col);
+            const displayCount = itemCount > 0 ? itemCount : '-';
+
+            const zoneCell = $(`
+                <div class="zone-cell-home" style="
+                    flex: 1;
+                    padding: 5px 8px;
+                    border: 2px solid ${borderColor};
+                    border-radius: 5px;
+                    background-color: ${zone.color || '#f8f9fa'};
+                    text-align: center;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    min-width: 60px;
+                " data-zone-id="${zone.id}" data-zone-name="${zone.zone_name}">
+                    <div style="font-size: 0.75rem; font-weight: 600;">${zone.zone_name}</div>
+                    <div style="font-size: 0.9rem; font-weight: bold; color: ${countColor};">${displayCount}</div>
+                </div>
+            `);
+
+            zoneCell.on('click', function() {
+                showZoneItems(zone.id, zone.zone_name);
             });
 
-            rowDiv.append(cell);
-        }
+            zoneCell.hover(
+                function() { $(this).css({'transform': 'translateY(-2px)', 'box-shadow': '0 3px 6px rgba(0,0,0,0.15)'}); },
+                function() { $(this).css({'transform': 'none', 'box-shadow': 'none'}); }
+            );
 
-        gridDiv.append(rowDiv);
-    }
+            rowDiv.append(zoneCell);
+        });
 
-    return gridDiv;
+        zonesContainer.append(rowDiv);
+    });
+
+    sectionDiv.append(zonesContainer);
+    contentDiv.append(sectionDiv);
 }
 
-// Show items at a specific location
-function showLocationItems(tempKey, section, row, col) {
-    fetch(`/api/location/${tempKey}/${section}/${row}/${col}`)
+// Show items in a schematic zone
+function showZoneItems(zoneId, zoneName) {
+    fetch(`/api/schematic/zone/${zoneId}/items`)
         .then(response => response.json())
-        .then(records => {
+        .then(items => {
             const modalTitle = $('#locationModalTitle');
             const modalBody = $('#locationItemsList');
 
-            modalTitle.text(`Items at ${tempKey} - ${section.charAt(0).toUpperCase() + section.slice(1)}: Row ${row}, Column ${col}`);
+            modalTitle.text(`Items in: ${zoneName}`);
             modalBody.empty();
 
-            if (records.length === 0) {
-                modalBody.html('<p class="text-muted">No items at this location</p>');
+            if (items.length === 0) {
+                modalBody.html('<p class="text-muted">No items in this zone</p>');
             } else {
                 const list = $('<ul class="list-group"></ul>');
-                records.forEach(record => {
-                    const item = $(`
+                items.forEach(item => {
+                    const listItem = $(`
                         <li class="list-group-item">
-                            <strong>${record.drug_name}</strong><br>
+                            <strong>${item.drug_name}</strong><br>
                             <small>
-                                Concentration: ${record.stock_concentration || '-'} ${record.stock_unit || ''}<br>
-                                Supplier: ${record.supplier || '-'}<br>
-                                Prep Date: ${record.preparation_date || '-'}
+                                Concentration: ${item.stock_concentration || '-'} ${item.stock_unit || ''}<br>
+                                Supplier: ${item.supplier || '-'}<br>
+                                ${item.aliquot_volume ? `Aliquot: ${item.aliquot_volume}<br>` : ''}
+                                Prep Date: ${item.preparation_date || '-'}
                             </small><br>
-                            <button class="btn btn-sm btn-primary mt-2" onclick="editRecord(${record.id}); $('#locationModal').modal('hide');">
+                            <button class="btn btn-sm btn-primary mt-2" onclick="editRecord(${item.id}); $('#locationModal').modal('hide');">
                                 <i class="bi bi-pencil"></i> Edit
                             </button>
                         </li>
                     `);
-                    list.append(item);
+                    list.append(listItem);
                 });
                 modalBody.append(list);
             }
@@ -401,7 +463,7 @@ function showLocationItems(tempKey, section, row, col) {
             $('#locationModal').modal('show');
         })
         .catch(error => {
-            console.error('Error loading location items:', error);
-            alert('Failed to load items at this location');
+            console.error('Error loading zone items:', error);
+            alert('Failed to load items');
         });
 }
