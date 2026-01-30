@@ -3,12 +3,11 @@
 let allRecords = [];
 let currentEditingId = null;
 let zoneCache = {}; // Cache zone data for display
+let allFridges = []; // Cache fridge data
 
 // Initialize on page load
 $(document).ready(function() {
-    loadRecords();
-    loadFridgeDisplays();
-    loadAllZones(); // Load zone cache for display
+    loadFridgesAndInitialize();
 
     // Search functionality
     $('#searchInput').on('input', function() {
@@ -25,16 +24,95 @@ $(document).ready(function() {
     });
 });
 
+// Load fridges first, then initialize other components
+function loadFridgesAndInitialize() {
+    fetch('/api/fridges')
+        .then(response => response.json())
+        .then(fridges => {
+            allFridges = fridges;
+            populateTemperatureFilter();
+            loadRecords();
+            loadFridgeDisplays();
+            loadAllZones();
+        })
+        .catch(error => {
+            console.error('Error loading fridges:', error);
+            // Fallback to default behavior
+            loadRecords();
+            loadFridgeDisplays();
+            loadAllZones();
+        });
+}
+
+// Populate temperature filter dropdown with dynamic fridge temperatures
+function populateTemperatureFilter() {
+    const tempFilter = $('#tempFilter');
+    const storageTemp = $('#storageTemp');
+
+    // Get unique temp types
+    const tempTypes = [...new Set(allFridges.map(f => f.temp_type))];
+
+    // Update filter dropdown (if it exists)
+    if (tempFilter.length) {
+        let filterOptions = '<option value="">All Temperatures</option>';
+        tempTypes.forEach(temp => {
+            const label = formatTempLabel(temp);
+            filterOptions += `<option value="${temp}">${label}</option>`;
+        });
+        // Add RT if not already there
+        if (!tempTypes.includes('RT')) {
+            filterOptions += '<option value="RT">Room Temperature</option>';
+        }
+        tempFilter.html(filterOptions);
+    }
+
+    // Update storage temp dropdown in add/edit form (if it exists)
+    if (storageTemp.length) {
+        let tempOptions = '';
+        tempTypes.forEach(temp => {
+            const label = formatTempLabel(temp);
+            tempOptions += `<option value="${temp}">${label}</option>`;
+        });
+        // Add RT if not already there
+        if (!tempTypes.includes('RT')) {
+            tempOptions += '<option value="RT">Room Temperature</option>';
+        }
+        storageTemp.html(tempOptions);
+    }
+}
+
+// Format temperature label for display
+function formatTempLabel(temp) {
+    const labels = {
+        '4C': '4°C',
+        '-20C': '-20°C',
+        '-80C': '-80°C',
+        '-150C': '-150°C',
+        '-196C': '-196°C',
+        'RT': 'Room Temperature'
+    };
+    return labels[temp] || temp;
+}
+
+// Sanitize temp key for use in element IDs (handles special chars like -)
+function sanitizeIdKey(tempKey) {
+    return tempKey.replace(/-/g, 'm');
+}
+
 // Load all zones into cache for display purposes
 function loadAllZones() {
-    const temps = ['4C', '-20C', '-80C'];
+    // Get unique temp types from fridges
+    const temps = [...new Set(allFridges.map(f => f.temp_type))];
     const sections = ['body', 'door'];
     let pendingRequests = 0;
     let completedRequests = 0;
 
     temps.forEach(temp => {
+        // Check if any fridge of this temp has door storage
+        const hasDoor = allFridges.some(f => f.temp_type === temp && f.has_door);
+
         sections.forEach(section => {
-            if (temp === '-80C' && section === 'door') return; // -80C has no door
+            if (section === 'door' && !hasDoor) return; // Skip door if no fridge has it
             pendingRequests++;
 
             fetch(`/api/schematic/${temp}/${section}`)
@@ -78,8 +156,9 @@ function loadZonesForTemperature() {
     zoneSelect.html('<option value="">Loading zones...</option>');
     zoneHint.text('');
 
-    // Fetch zones for body and door sections
-    const sections = temp === '-80C' ? ['body'] : ['body', 'door'];
+    // Check if any fridge of this temp has door storage
+    const hasDoor = allFridges.some(f => f.temp_type === temp && f.has_door);
+    const sections = hasDoor ? ['body', 'door'] : ['body'];
     let allZones = [];
     let completed = 0;
 
@@ -194,9 +273,11 @@ function getTempBadge(temp) {
         '4C': '<span class="temp-badge temp-4c">4°C</span>',
         '-20C': '<span class="temp-badge temp-minus20">-20°C</span>',
         '-80C': '<span class="temp-badge temp-minus80">-80°C</span>',
+        '-150C': '<span class="badge bg-primary">-150°C</span>',
+        '-196C': '<span class="badge bg-dark">-196°C</span>',
         'RT': '<span class="badge bg-secondary">RT</span>'
     };
-    return badges[temp] || temp;
+    return badges[temp] || `<span class="badge bg-secondary">${temp}</span>`;
 }
 
 // Get location display string
@@ -306,7 +387,9 @@ function loadZonesForTemperatureWithCallback(temp, callback) {
     zoneSelect.html('<option value="">Loading zones...</option>');
     zoneHint.text('');
 
-    const sections = temp === '-80C' ? ['body'] : ['body', 'door'];
+    // Check if any fridge of this temp has door storage
+    const hasDoor = allFridges.some(f => f.temp_type === temp && f.has_door);
+    const sections = hasDoor ? ['body', 'door'] : ['body'];
     let allZones = [];
     let completed = 0;
 
@@ -459,27 +542,37 @@ function loadFridgeDisplays() {
     const container = $('#fridgeDisplays');
     container.empty();
 
-    const fridges = [
-        {key: '4C', name: '4°C Fridge', sections: ['body', 'door'], headerClass: 'temp-header-4c'},
-        {key: '-20C', name: '-20°C Freezer', sections: ['body', 'door'], headerClass: 'temp-header-20c'},
-        {key: '-80C', name: '-80°C Ultra-Low', sections: ['body'], headerClass: 'temp-header-80c'}
-    ];
+    if (allFridges.length === 0) {
+        container.html('<p class="text-muted text-center">No fridges configured. Go to Settings to add fridges.</p>');
+        return;
+    }
 
-    fridges.forEach(fridge => {
+    // Display each fridge individually with its own layout
+    allFridges.forEach(fridge => {
+        const sections = fridge.has_door ? ['body', 'door'] : ['body'];
+        const safeId = `fridge-${fridge.id}`;
+
+        // Build location display
+        let locationHtml = '';
+        if (fridge.location) {
+            locationHtml = `<small class="text-white-50">(${fridge.location})</small>`;
+        }
+
         const fridgeDiv = $(`
             <div class="fridge-section mb-3" style="background: white; border-radius: 8px; overflow: hidden;">
-                <div class="p-2 text-white text-center" style="background: linear-gradient(135deg, ${getGradientColor(fridge.key)});">
-                    <strong>${fridge.name}</strong>
+                <div class="p-2 text-white text-center" style="background: linear-gradient(135deg, ${getGradientColor(fridge.temp_type)});">
+                    <strong>${fridge.name}</strong> ${locationHtml}
+                    <div style="font-size: 0.75rem; opacity: 0.9;">${formatTempLabel(fridge.temp_type)}</div>
                 </div>
-                <div class="p-2" id="fridge-content-${fridge.key}">
+                <div class="p-2" id="fridge-content-${safeId}">
                 </div>
             </div>
         `);
         container.append(fridgeDiv);
 
-        // Load each section
-        fridge.sections.forEach(section => {
-            loadSchematicSection(fridge.key, section);
+        // Load each section for this specific fridge
+        sections.forEach(section => {
+            loadSchematicSectionForFridge(fridge, section);
         });
     });
 }
@@ -488,16 +581,47 @@ function getGradientColor(tempKey) {
     const colors = {
         '4C': '#3498db, #2980b9',
         '-20C': '#f39c12, #d68910',
-        '-80C': '#9b59b6, #8e44ad'
+        '-80C': '#9b59b6, #8e44ad',
+        'RT': '#27ae60, #1e8449',
+        '-196C': '#1abc9c, #16a085',  // Liquid nitrogen
+        '-150C': '#00bcd4, #0097a7'   // Cryo freezer
     };
     return colors[tempKey] || '#6c757d, #495057';
+}
+
+function loadSchematicSectionForFridge(fridge, section) {
+    const safeId = `fridge-${fridge.id}`;
+
+    fetch(`/api/schematic/fridge/${fridge.id}/${section}`)
+        .then(response => response.json())
+        .then(data => {
+            const contentDiv = $(`#fridge-content-${safeId}`);
+
+            if (data.zones && data.zones.length > 0) {
+                renderSchematicZones(contentDiv, fridge.temp_type, section, data);
+            } else {
+                // Show "no layout" message only if no zones exist for this section
+                if (contentDiv.find(`.section-${section}`).length === 0) {
+                    contentDiv.append(`
+                        <div class="section-${section} mb-2">
+                            <small class="text-muted">${section.charAt(0).toUpperCase() + section.slice(1)}: </small>
+                            <a href="/schematic-layout-builder" class="text-primary small">Configure layout</a>
+                        </div>
+                    `);
+                }
+            }
+        })
+        .catch(error => {
+            console.error(`Error loading schematic for fridge ${fridge.id}/${section}:`, error);
+        });
 }
 
 function loadSchematicSection(tempKey, section) {
     fetch(`/api/schematic/${tempKey}/${section}`)
         .then(response => response.json())
         .then(data => {
-            const contentDiv = $(`#fridge-content-${tempKey}`);
+            const safeId = sanitizeIdKey(tempKey);
+            const contentDiv = $(`#fridge-content-${safeId}`);
 
             if (data.zones && data.zones.length > 0) {
                 renderSchematicZones(contentDiv, tempKey, section, data);

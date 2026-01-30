@@ -107,14 +107,13 @@
                 <i class="bi bi-sliders"></i> Configuration
             </div>
             <div class="card-body">
-                <!-- Temperature Selection -->
+                <!-- Fridge Selection -->
                 <div class="mb-3">
-                    <label class="form-label">Temperature</label>
+                    <label class="form-label">Fridge/Freezer</label>
                     <select class="form-select" id="tempSelect">
-                        <option value="4C">4°C Fridge</option>
-                        <option value="-20C">-20°C Freezer</option>
-                        <option value="-80C">-80°C Ultra-Low Freezer</option>
+                        <option value="">Loading fridges...</option>
                     </select>
+                    <small class="text-muted" id="fridgeLocation"></small>
                 </div>
 
                 <!-- Section Selection -->
@@ -235,14 +234,16 @@
 let layoutData = [];  // Array of rows, each row is array of zones
 let selectedZone = null;  // {rowIndex, zoneIndex}
 let currentLayoutId = null;
+let allFridges = [];  // Cache fridge data
 
 $(document).ready(function() {
-    // Load existing layout
-    loadLayout();
+    // Load fridges first, then load layout
+    loadFridgesForBuilder();
 
     // Handle temperature change
     $('#tempSelect').on('change', function() {
         updateSectionOptions();
+        updateFridgeLocationDisplay();
         loadLayout();
     });
 
@@ -264,11 +265,90 @@ $(document).ready(function() {
     });
 });
 
+function loadFridgesForBuilder() {
+    fetch('/api/fridges')
+        .then(response => response.json())
+        .then(fridges => {
+            allFridges = fridges;
+            populateFridgeSelect();
+            loadLayout();
+        })
+        .catch(error => {
+            console.error('Error loading fridges:', error);
+            $('#tempSelect').html('<option value="">Error loading fridges</option>');
+        });
+}
+
+function populateFridgeSelect() {
+    const select = $('#tempSelect');
+
+    if (allFridges.length === 0) {
+        select.html('<option value="">No fridges configured - add fridges in Settings</option>');
+        return;
+    }
+
+    // Group fridges by temp_type
+    const fridgesByTemp = {};
+    allFridges.forEach(fridge => {
+        if (!fridgesByTemp[fridge.temp_type]) {
+            fridgesByTemp[fridge.temp_type] = [];
+        }
+        fridgesByTemp[fridge.temp_type].push(fridge);
+    });
+
+    let options = '';
+    Object.keys(fridgesByTemp).forEach(tempType => {
+        const label = formatTempLabel(tempType);
+        const fridges = fridgesByTemp[tempType];
+
+        if (fridges.length === 1) {
+            // Single fridge for this temp - show directly
+            const f = fridges[0];
+            options += `<option value="${tempType}" data-fridge-id="${f.id}" data-has-door="${f.has_door}">${f.name} (${label})</option>`;
+        } else {
+            // Multiple fridges - create optgroup
+            options += `<optgroup label="${label}">`;
+            fridges.forEach(f => {
+                const loc = f.location ? ` - ${f.location}` : '';
+                options += `<option value="${tempType}" data-fridge-id="${f.id}" data-has-door="${f.has_door}">${f.name}${loc}</option>`;
+            });
+            options += '</optgroup>';
+        }
+    });
+
+    select.html(options);
+    updateSectionOptions();
+    updateFridgeLocationDisplay();
+}
+
+function formatTempLabel(temp) {
+    const labels = {
+        '4C': '4°C',
+        '-20C': '-20°C',
+        '-80C': '-80°C',
+        'RT': 'Room Temperature'
+    };
+    return labels[temp] || temp;
+}
+
+function updateFridgeLocationDisplay() {
+    const selected = $('#tempSelect option:selected');
+    const fridgeId = selected.data('fridge-id');
+    const fridge = allFridges.find(f => f.id === fridgeId);
+
+    if (fridge && fridge.location) {
+        $('#fridgeLocation').html(`<i class="bi bi-geo-alt"></i> ${fridge.location}`);
+    } else {
+        $('#fridgeLocation').html('');
+    }
+}
+
 function updateSectionOptions() {
-    const temp = $('#tempSelect').val();
+    const selected = $('#tempSelect option:selected');
+    const hasDoor = selected.data('has-door');
     const section = $('#sectionSelect');
 
-    if (temp === '-80C') {
+    if (!hasDoor) {
         section.html('<option value="body">Body (Main Compartment)</option>');
     } else {
         section.html(`
@@ -281,9 +361,16 @@ function updateSectionOptions() {
 function loadLayout() {
     const temp = $('#tempSelect').val();
     const section = $('#sectionSelect').val();
+    const selected = $('#tempSelect option:selected');
+    const fridgeId = selected.data('fridge-id');
+
+    // Use fridge-specific endpoint if we have a fridge_id
+    const url = fridgeId
+        ? `/api/schematic/fridge/${fridgeId}/${section}`
+        : `/api/schematic/${temp}/${section}`;
 
     $.ajax({
-        url: `/api/schematic/${temp}/${section}`,
+        url: url,
         type: 'GET',
         success: function(data) {
             if (data.layout) {
@@ -499,6 +586,9 @@ function applyPreset(preset) {
 function saveLayout() {
     const temp = $('#tempSelect').val();
     const section = $('#sectionSelect').val();
+    const selected = $('#tempSelect option:selected');
+    const fridgeId = selected.data('fridge-id');
+    const fridgeName = selected.text();
 
     if (layoutData.length === 0) {
         alert('Please create a layout first');
@@ -513,7 +603,8 @@ function saveLayout() {
         data: JSON.stringify({
             temp_key: temp,
             section: section,
-            layout_name: `${temp} ${section}`
+            layout_name: `${fridgeName} ${section}`,
+            fridge_id: fridgeId
         }),
         success: function(result) {
             const layoutId = result.layout_id;

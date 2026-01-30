@@ -277,27 +277,104 @@
 
     <!-- Settings Modal -->
     <div class="modal fade" id="settingsModal" tabindex="-1">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-gear"></i> Settings</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="settingsForm">
-                        <div class="mb-3">
-                            <label for="labName" class="form-label">Lab/Institution Name</label>
-                            <input type="text" class="form-control" id="labName" placeholder="e.g., University Research Center">
+                    <!-- Nav tabs -->
+                    <ul class="nav nav-tabs mb-3" id="settingsTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="general-tab" data-bs-toggle="tab" data-bs-target="#generalSettings" type="button" role="tab">General</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="fridges-tab" data-bs-toggle="tab" data-bs-target="#fridgeSettings" type="button" role="tab">Fridges</button>
+                        </li>
+                    </ul>
+
+                    <!-- Tab content -->
+                    <div class="tab-content" id="settingsTabContent">
+                        <!-- General Settings Tab -->
+                        <div class="tab-pane fade show active" id="generalSettings" role="tabpanel">
+                            <form id="settingsForm">
+                                <div class="mb-3">
+                                    <label for="labName" class="form-label">Lab/Institution Name</label>
+                                    <input type="text" class="form-control" id="labName" placeholder="e.g., University Research Center">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="piName" class="form-label">PI Name</label>
+                                    <input type="text" class="form-control" id="piName" placeholder="e.g., Dr. Smith">
+                                </div>
+                            </form>
                         </div>
-                        <div class="mb-3">
-                            <label for="piName" class="form-label">PI Name</label>
-                            <input type="text" class="form-control" id="piName" placeholder="e.g., Dr. Smith">
+
+                        <!-- Fridge Settings Tab -->
+                        <div class="tab-pane fade" id="fridgeSettings" role="tabpanel">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="mb-0">Manage Fridges & Freezers</h6>
+                                <button class="btn btn-sm btn-primary" onclick="showAddFridgeForm()">
+                                    <i class="bi bi-plus-circle"></i> Add Fridge
+                                </button>
+                            </div>
+
+                            <!-- Add/Edit Fridge Form (hidden by default) -->
+                            <div id="fridgeForm" class="card mb-3" style="display: none;">
+                                <div class="card-body">
+                                    <h6 class="card-title" id="fridgeFormTitle">Add New Fridge</h6>
+                                    <input type="hidden" id="editFridgeId">
+                                    <div class="row">
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Name *</label>
+                                            <input type="text" class="form-control" id="fridgeName" placeholder="e.g., Main Lab Fridge">
+                                        </div>
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Temperature Type *</label>
+                                            <select class="form-select" id="fridgeTempType">
+                                                <option value="4C">4°C (Refrigerator)</option>
+                                                <option value="-20C">-20°C (Freezer)</option>
+                                                <option value="-80C">-80°C (Ultra-Low Freezer)</option>
+                                                <option value="-150C">-150°C (Cryo Freezer)</option>
+                                                <option value="-196C">-196°C (Liquid Nitrogen)</option>
+                                                <option value="RT">Room Temperature</option>
+                                                <option value="custom">Custom...</option>
+                                            </select>
+                                            <input type="text" class="form-control mt-2" id="fridgeTempTypeCustom" placeholder="e.g., -40C" style="display: none;">
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-8 mb-2">
+                                            <label class="form-label">Location</label>
+                                            <input type="text" class="form-control" id="fridgeLocation" placeholder="e.g., Room 301, Cold Room">
+                                        </div>
+                                        <div class="col-md-4 mb-2">
+                                            <label class="form-label">Has Door Storage</label>
+                                            <select class="form-select" id="fridgeHasDoor">
+                                                <option value="1">Yes</option>
+                                                <option value="0">No</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-primary btn-sm" onclick="saveFridge()">Save</button>
+                                        <button class="btn btn-secondary btn-sm" onclick="cancelFridgeForm()">Cancel</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Fridge List -->
+                            <div id="fridgeList">
+                                <div class="text-center text-muted py-3">
+                                    <i class="bi bi-arrow-clockwise"></i> Loading fridges...
+                                </div>
+                            </div>
                         </div>
-                    </form>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="button" class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+                    <button type="button" class="btn btn-primary" onclick="saveSettings()">Save General Settings</button>
                 </div>
             </div>
         </div>
@@ -345,6 +422,199 @@
             .catch(error => {
                 console.error('Error saving settings:', error);
                 alert('Failed to save settings');
+            });
+        }
+
+        // ========== FRIDGE MANAGEMENT ==========
+
+        // Load fridges when fridge tab is shown
+        $('#fridges-tab').on('shown.bs.tab', function() {
+            loadFridges();
+        });
+
+        function loadFridges() {
+            fetch('/api/fridges')
+                .then(response => response.json())
+                .then(fridges => {
+                    renderFridgeList(fridges);
+                })
+                .catch(error => {
+                    console.error('Error loading fridges:', error);
+                    $('#fridgeList').html('<div class="alert alert-danger">Error loading fridges</div>');
+                });
+        }
+
+        function renderFridgeList(fridges) {
+            if (fridges.length === 0) {
+                $('#fridgeList').html('<div class="text-center text-muted py-3">No fridges configured. Click "Add Fridge" to get started.</div>');
+                return;
+            }
+
+            let html = '<div class="list-group">';
+            fridges.forEach(fridge => {
+                const tempBadge = getTempBadge(fridge.temp_type);
+                const doorIcon = fridge.has_door ? '<i class="bi bi-door-open text-success" title="Has door storage"></i>' : '<i class="bi bi-door-closed text-muted" title="No door storage"></i>';
+                html += `
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>${escapeHtml(fridge.name)}</strong>
+                            ${tempBadge}
+                            ${doorIcon}
+                            ${fridge.location ? `<small class="text-muted d-block"><i class="bi bi-geo-alt"></i> ${escapeHtml(fridge.location)}</small>` : ''}
+                        </div>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-primary" onclick="editFridge(${fridge.id})" title="Edit">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-outline-danger" onclick="deleteFridge(${fridge.id}, '${escapeHtml(fridge.name)}')" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            $('#fridgeList').html(html);
+        }
+
+        function getTempBadge(tempType) {
+            const badges = {
+                '4C': '<span class="badge bg-info ms-2">4°C</span>',
+                '-20C': '<span class="badge bg-warning text-dark ms-2">-20°C</span>',
+                '-80C': '<span class="badge bg-danger ms-2">-80°C</span>',
+                '-150C': '<span class="badge bg-primary ms-2">-150°C</span>',
+                '-196C': '<span class="badge bg-dark ms-2">-196°C</span>',
+                'RT': '<span class="badge bg-secondary ms-2">RT</span>'
+            };
+            return badges[tempType] || `<span class="badge bg-secondary ms-2">${tempType}</span>`;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Handle custom temperature type selection
+        $('#fridgeTempType').on('change', function() {
+            if ($(this).val() === 'custom') {
+                $('#fridgeTempTypeCustom').show().focus();
+            } else {
+                $('#fridgeTempTypeCustom').hide().val('');
+            }
+        });
+
+        function showAddFridgeForm() {
+            $('#editFridgeId').val('');
+            $('#fridgeName').val('');
+            $('#fridgeTempType').val('4C');
+            $('#fridgeTempTypeCustom').hide().val('');
+            $('#fridgeLocation').val('');
+            $('#fridgeHasDoor').val('1');
+            $('#fridgeFormTitle').text('Add New Fridge');
+            $('#fridgeForm').slideDown();
+        }
+
+        function editFridge(fridgeId) {
+            fetch(`/api/fridges/${fridgeId}`)
+                .then(response => response.json())
+                .then(fridge => {
+                    $('#editFridgeId').val(fridge.id);
+                    $('#fridgeName').val(fridge.name);
+
+                    // Check if temp_type is in the predefined list
+                    const predefinedTemps = ['4C', '-20C', '-80C', '-150C', '-196C', 'RT'];
+                    if (predefinedTemps.includes(fridge.temp_type)) {
+                        $('#fridgeTempType').val(fridge.temp_type);
+                        $('#fridgeTempTypeCustom').hide().val('');
+                    } else {
+                        // Custom temperature type
+                        $('#fridgeTempType').val('custom');
+                        $('#fridgeTempTypeCustom').show().val(fridge.temp_type);
+                    }
+
+                    $('#fridgeLocation').val(fridge.location || '');
+                    $('#fridgeHasDoor').val(fridge.has_door ? '1' : '0');
+                    $('#fridgeFormTitle').text('Edit Fridge');
+                    $('#fridgeForm').slideDown();
+                })
+                .catch(error => {
+                    console.error('Error loading fridge:', error);
+                    alert('Error loading fridge details');
+                });
+        }
+
+        function cancelFridgeForm() {
+            $('#fridgeForm').slideUp();
+        }
+
+        function saveFridge() {
+            const fridgeId = $('#editFridgeId').val();
+            let tempType = $('#fridgeTempType').val();
+
+            // Handle custom temperature type
+            if (tempType === 'custom') {
+                tempType = $('#fridgeTempTypeCustom').val().trim();
+                if (!tempType) {
+                    alert('Please enter a custom temperature type');
+                    return;
+                }
+            }
+
+            const data = {
+                name: $('#fridgeName').val().trim(),
+                temp_type: tempType,
+                location: $('#fridgeLocation').val().trim(),
+                has_door: $('#fridgeHasDoor').val() === '1'
+            };
+
+            if (!data.name) {
+                alert('Fridge name is required');
+                return;
+            }
+
+            const url = fridgeId ? `/api/fridges/${fridgeId}` : '/api/fridges';
+            const method = fridgeId ? 'PUT' : 'POST';
+
+            fetch(url, {
+                method: method,
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success || result.id) {
+                    $('#fridgeForm').slideUp();
+                    loadFridges();
+                } else {
+                    alert('Error saving fridge: ' + (result.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error saving fridge:', error);
+                alert('Failed to save fridge');
+            });
+        }
+
+        function deleteFridge(fridgeId, fridgeName) {
+            if (!confirm(`Are you sure you want to delete "${fridgeName}"?\n\nThis will NOT delete items stored in this fridge, but they will lose their location assignment.`)) {
+                return;
+            }
+
+            fetch(`/api/fridges/${fridgeId}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    loadFridges();
+                } else {
+                    alert('Error deleting fridge: ' + (result.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error deleting fridge:', error);
+                alert('Failed to delete fridge');
             });
         }
     </script>

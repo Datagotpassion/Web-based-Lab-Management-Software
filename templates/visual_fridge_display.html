@@ -112,16 +112,9 @@
         border-bottom: 2px solid #dee2e6;
     }
 
-    .temp-header-4c {
-        background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
-    }
-
-    .temp-header-20c {
-        background: linear-gradient(135deg, #f39c12 0%, #d68910 100%);
-    }
-
-    .temp-header-80c {
-        background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);
+    .card-header small {
+        display: block;
+        margin-top: 5px;
     }
 </style>
 {% endblock %}
@@ -141,86 +134,13 @@
     </div>
 </div>
 
-<!-- 4C Fridge -->
-<div class="card fridge-section-card">
-    <div class="card-header temp-header-4c text-white">
-        <h4 class="mb-0"><i class="bi bi-thermometer-half"></i> 4°C Fridge</h4>
-    </div>
-    <div class="card-body">
-        <div class="row">
-            <div class="col-md-6">
-                <div class="section-title"><i class="bi bi-box"></i> Body (Main Compartment)</div>
-                <div class="schematic-container" id="display-4C-body">
-                    <div class="no-layout-message">
-                        <i class="bi bi-grid-3x3"></i>
-                        <p>No layout configured</p>
-                        <a href="/schematic-layout-builder" class="btn btn-sm btn-primary">Create Layout</a>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="section-title"><i class="bi bi-door-open"></i> Door Storage</div>
-                <div class="schematic-container" id="display-4C-door">
-                    <div class="no-layout-message">
-                        <i class="bi bi-grid-3x3"></i>
-                        <p>No layout configured</p>
-                        <a href="/schematic-layout-builder" class="btn btn-sm btn-primary">Create Layout</a>
-                    </div>
-                </div>
-            </div>
+<!-- Dynamic Fridge Container -->
+<div id="fridges-container">
+    <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
         </div>
-    </div>
-</div>
-
-<!-- -20C Freezer -->
-<div class="card fridge-section-card">
-    <div class="card-header temp-header-20c text-white">
-        <h4 class="mb-0"><i class="bi bi-thermometer-snow"></i> -20°C Freezer</h4>
-    </div>
-    <div class="card-body">
-        <div class="row">
-            <div class="col-md-6">
-                <div class="section-title"><i class="bi bi-box"></i> Body (Main Compartment)</div>
-                <div class="schematic-container" id="display--20C-body">
-                    <div class="no-layout-message">
-                        <i class="bi bi-grid-3x3"></i>
-                        <p>No layout configured</p>
-                        <a href="/schematic-layout-builder" class="btn btn-sm btn-primary">Create Layout</a>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="section-title"><i class="bi bi-door-open"></i> Door Storage</div>
-                <div class="schematic-container" id="display--20C-door">
-                    <div class="no-layout-message">
-                        <i class="bi bi-grid-3x3"></i>
-                        <p>No layout configured</p>
-                        <a href="/schematic-layout-builder" class="btn btn-sm btn-primary">Create Layout</a>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- -80C Ultra-Low Freezer -->
-<div class="card fridge-section-card">
-    <div class="card-header temp-header-80c text-white">
-        <h4 class="mb-0"><i class="bi bi-snow2"></i> -80°C Ultra-Low Freezer</h4>
-    </div>
-    <div class="card-body">
-        <div class="row">
-            <div class="col-12">
-                <div class="section-title"><i class="bi bi-box"></i> Body (Main Compartment)</div>
-                <div class="schematic-container" id="display--80C-body">
-                    <div class="no-layout-message">
-                        <i class="bi bi-grid-3x3"></i>
-                        <p>No layout configured</p>
-                        <a href="/schematic-layout-builder" class="btn btn-sm btn-primary">Create Layout</a>
-                    </div>
-                </div>
-            </div>
-        </div>
+        <p class="text-muted mt-2">Loading fridges...</p>
     </div>
 </div>
 
@@ -288,43 +208,172 @@
 let currentZoneId = null;
 let currentZoneName = '';
 let allItems = [];
+let allFridges = [];
 
 $(document).ready(function() {
-    loadAllLayouts();
+    loadFridgesAndRender();
     loadAllItems();
 });
 
-function loadAllLayouts() {
-    const configs = [
-        { temp: '4C', sections: ['body', 'door'] },
-        { temp: '-20C', sections: ['body', 'door'] },
-        { temp: '-80C', sections: ['body'] }
-    ];
-
-    configs.forEach(config => {
-        config.sections.forEach(section => {
-            loadSchematicLayout(config.temp, section);
+function loadFridgesAndRender() {
+    fetch('/api/fridges')
+        .then(response => response.json())
+        .then(fridges => {
+            allFridges = fridges;
+            renderFridgeCards();
+            loadAllLayouts();
+        })
+        .catch(error => {
+            console.error('Error loading fridges:', error);
+            $('#fridges-container').html(`
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle"></i> Error loading fridges.
+                    <a href="javascript:location.reload()">Refresh</a>
+                </div>
+            `);
         });
+}
+
+function renderFridgeCards() {
+    const $container = $('#fridges-container');
+    $container.empty();
+
+    if (allFridges.length === 0) {
+        $container.html(`
+            <div class="alert alert-info text-center">
+                <i class="bi bi-info-circle"></i> No fridges configured.
+                <a href="#" data-bs-toggle="modal" data-bs-target="#settingsModal">Add fridges in Settings</a>
+            </div>
+        `);
+        return;
+    }
+
+    // Render each fridge individually
+    allFridges.forEach(fridge => {
+        const hasDoor = fridge.has_door;
+        const headerGradient = getGradientColor(fridge.temp_type);
+        const tempLabel = formatTempLabel(fridge.temp_type);
+        const tempIcon = getTempIcon(fridge.temp_type);
+        const safeId = `fridge-${fridge.id}`;
+
+        // Build location display
+        const locationInfo = fridge.location ? `<small class="opacity-75">${fridge.location}</small>` : '';
+
+        let cardHtml = `
+            <div class="card fridge-section-card">
+                <div class="card-header text-white" style="background: linear-gradient(135deg, ${headerGradient});">
+                    <h4 class="mb-0"><i class="bi ${tempIcon}"></i> ${fridge.name}</h4>
+                    <small class="opacity-75">${tempLabel}</small>
+                    ${locationInfo ? '<br>' + locationInfo : ''}
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="${hasDoor ? 'col-md-6' : 'col-12'}">
+                            <div class="section-title"><i class="bi bi-box"></i> Body (Main Compartment)</div>
+                            <div class="schematic-container" id="display-${safeId}-body">
+                                <div class="no-layout-message">
+                                    <i class="bi bi-grid-3x3"></i>
+                                    <p>No layout configured</p>
+                                    <a href="/schematic-layout-builder" class="btn btn-sm btn-primary">Create Layout</a>
+                                </div>
+                            </div>
+                        </div>
+        `;
+
+        if (hasDoor) {
+            cardHtml += `
+                        <div class="col-md-6">
+                            <div class="section-title"><i class="bi bi-door-open"></i> Door Storage</div>
+                            <div class="schematic-container" id="display-${safeId}-door">
+                                <div class="no-layout-message">
+                                    <i class="bi bi-grid-3x3"></i>
+                                    <p>No layout configured</p>
+                                    <a href="/schematic-layout-builder" class="btn btn-sm btn-primary">Create Layout</a>
+                                </div>
+                            </div>
+                        </div>
+            `;
+        }
+
+        cardHtml += `
+                    </div>
+                </div>
+            </div>
+        `;
+
+        $container.append(cardHtml);
     });
 }
 
-function loadSchematicLayout(tempKey, section) {
-    $.ajax({
-        url: `/api/schematic/${tempKey}/${section}`,
-        type: 'GET',
-        success: function(data) {
-            if (data.layout && data.zones && data.zones.length > 0) {
-                renderSchematic(tempKey, section, data);
-            }
-        },
-        error: function() {
-            console.log(`No schematic for ${tempKey} ${section}`);
+function getGradientColor(tempKey) {
+    const colors = {
+        '4C': '#3498db, #2980b9',
+        '-20C': '#f39c12, #d68910',
+        '-80C': '#9b59b6, #8e44ad',
+        '-150C': '#00bcd4, #0097a7',
+        '-196C': '#1abc9c, #16a085',
+        'RT': '#27ae60, #1e8449'
+    };
+    return colors[tempKey] || '#6c757d, #495057';
+}
+
+function formatTempLabel(temp) {
+    const labels = {
+        '4C': '4°C Fridge',
+        '-20C': '-20°C Freezer',
+        '-80C': '-80°C Ultra-Low Freezer',
+        '-150C': '-150°C Cryo Freezer',
+        '-196C': '-196°C Liquid Nitrogen',
+        'RT': 'Room Temperature Storage'
+    };
+    return labels[temp] || temp;
+}
+
+function getTempIcon(tempKey) {
+    const icons = {
+        '4C': 'bi-thermometer-half',
+        '-20C': 'bi-thermometer-snow',
+        '-80C': 'bi-snow2',
+        '-150C': 'bi-snow3',
+        '-196C': 'bi-droplet-fill',
+        'RT': 'bi-house-door'
+    };
+    return icons[tempKey] || 'bi-thermometer';
+}
+
+// Sanitize temp key for use in element IDs (handles special chars like -)
+function sanitizeIdKey(tempKey) {
+    return tempKey.replace(/-/g, 'm');
+}
+
+function loadAllLayouts() {
+    // Load layouts for each individual fridge
+    allFridges.forEach(fridge => {
+        loadSchematicLayoutForFridge(fridge, 'body');
+        if (fridge.has_door) {
+            loadSchematicLayoutForFridge(fridge, 'door');
         }
     });
 }
 
-function renderSchematic(tempKey, section, data) {
-    const containerId = `display-${tempKey}-${section}`;
+function loadSchematicLayoutForFridge(fridge, section) {
+    $.ajax({
+        url: `/api/schematic/fridge/${fridge.id}/${section}`,
+        type: 'GET',
+        success: function(data) {
+            if (data.layout && data.zones && data.zones.length > 0) {
+                renderSchematicForFridge(fridge, section, data);
+            }
+        },
+        error: function() {
+            console.log(`No schematic for fridge ${fridge.id} ${section}`);
+        }
+    });
+}
+
+function renderSchematicForFridge(fridge, section, data) {
+    const safeId = `fridge-${fridge.id}`;
+    const containerId = `display-${safeId}-${section}`;
     const $container = $(`#${containerId}`);
 
     // Create occupancy map

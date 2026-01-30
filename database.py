@@ -92,18 +92,53 @@ class Database:
         ''')
 
         # Create schematic layouts table (stores digital layout structure)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS fridge_schematic_layouts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                temp_key TEXT NOT NULL,
-                section TEXT NOT NULL,
-                layout_name TEXT,
-                reference_photo TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(temp_key, section)
-            )
-        ''')
+        # Check if old table exists with wrong constraint
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='fridge_schematic_layouts'")
+        if cursor.fetchone():
+            # Check if we need to migrate (old table has UNIQUE on temp_key, section)
+            cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='fridge_schematic_layouts'")
+            create_sql = cursor.fetchone()[0]
+            if 'UNIQUE(temp_key, section)' in create_sql or 'fridge_id' not in create_sql:
+                # Need to migrate - recreate table with correct schema
+                cursor.execute('ALTER TABLE fridge_schematic_layouts RENAME TO fridge_schematic_layouts_old')
+                cursor.execute('''
+                    CREATE TABLE fridge_schematic_layouts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        temp_key TEXT NOT NULL,
+                        section TEXT NOT NULL,
+                        layout_name TEXT,
+                        reference_photo TEXT,
+                        fridge_id INTEGER,
+                        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(fridge_id, section)
+                    )
+                ''')
+                # Copy data from old table, trying to match fridge_id based on temp_key
+                cursor.execute('''
+                    INSERT INTO fridge_schematic_layouts (id, temp_key, section, layout_name, reference_photo, fridge_id, created_at, updated_at)
+                    SELECT
+                        old.id, old.temp_key, old.section, old.layout_name, old.reference_photo,
+                        (SELECT f.id FROM fridges f WHERE f.temp_type = old.temp_key LIMIT 1),
+                        old.created_at, old.updated_at
+                    FROM fridge_schematic_layouts_old old
+                ''')
+                cursor.execute('DROP TABLE fridge_schematic_layouts_old')
+        else:
+            # Create new table with correct schema
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS fridge_schematic_layouts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    temp_key TEXT NOT NULL,
+                    section TEXT NOT NULL,
+                    layout_name TEXT,
+                    reference_photo TEXT,
+                    fridge_id INTEGER,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(fridge_id, section)
+                )
+            ''')
 
         # Create schematic zones table (stores individual zones in a layout)
         cursor.execute('''
@@ -160,6 +195,32 @@ class Database:
         cursor.execute('''
             INSERT OR IGNORE INTO settings (key, value) VALUES ('pi_name', '')
         ''')
+
+        # Create fridges table for user-defined fridges
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS fridges (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                temp_type TEXT NOT NULL,
+                location TEXT,
+                has_door INTEGER DEFAULT 1,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # Initialize default fridges if none exist
+        cursor.execute('SELECT COUNT(*) FROM fridges')
+        if cursor.fetchone()[0] == 0:
+            default_fridges = [
+                ('4°C Fridge', '4C', 'Main Lab', 1),
+                ('-20°C Freezer', '-20C', 'Main Lab', 1),
+                ('-80°C Freezer', '-80C', 'Main Lab', 0)
+            ]
+            for name, temp_type, location, has_door in default_fridges:
+                cursor.execute('''
+                    INSERT INTO fridges (name, temp_type, location, has_door)
+                    VALUES (?, ?, ?, ?)
+                ''', (name, temp_type, location, has_door))
 
         # Create primary antibodies table
         cursor.execute('''
@@ -745,35 +806,78 @@ class Database:
 
     # ========== SCHEMATIC LAYOUT METHODS ==========
 
-    def create_schematic_layout(self, temp_key, section, layout_name=None, reference_photo=None):
-        """Create a new schematic layout"""
+    def create_schematic_layout(self, temp_key, section, layout_name=None, reference_photo=None, fridge_id=None):
+        """Create a new schematic layout for a specific fridge"""
         conn = self.get_connection()
         cursor = conn.cursor()
 
-        cursor.execute('''
-            INSERT INTO fridge_schematic_layouts (temp_key, section, layout_name, reference_photo, updated_at)
-            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(temp_key, section)
-            DO UPDATE SET layout_name = ?, reference_photo = ?, updated_at = CURRENT_TIMESTAMP
-        ''', (temp_key, section, layout_name, reference_photo, layout_name, reference_photo))
+        if fridge_id:
+            # Per-fridge layout - check if exists for this fridge
+            cursor.execute('''
+                SELECT id FROM fridge_schematic_layouts
+                WHERE fridge_id = ? AND section = ?
+            ''', (fridge_id, section))
+            existing = cursor.fetchone()
 
-        layout_id = cursor.lastrowid or cursor.execute(
-            'SELECT id FROM fridge_schematic_layouts WHERE temp_key = ? AND section = ?',
-            (temp_key, section)
-        ).fetchone()[0]
+            if existing:
+                cursor.execute('''
+                    UPDATE fridge_schematic_layouts
+                    SET layout_name = ?, reference_photo = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (layout_name, reference_photo, existing[0]))
+                layout_id = existing[0]
+            else:
+                cursor.execute('''
+                    INSERT INTO fridge_schematic_layouts (temp_key, section, layout_name, reference_photo, fridge_id, updated_at)
+                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ''', (temp_key, section, layout_name, reference_photo, fridge_id))
+                layout_id = cursor.lastrowid
+        else:
+            # Legacy temp_key based layout (for backwards compatibility)
+            cursor.execute('''
+                INSERT INTO fridge_schematic_layouts (temp_key, section, layout_name, reference_photo, updated_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(temp_key, section)
+                DO UPDATE SET layout_name = ?, reference_photo = ?, updated_at = CURRENT_TIMESTAMP
+            ''', (temp_key, section, layout_name, reference_photo, layout_name, reference_photo))
+
+            layout_id = cursor.lastrowid or cursor.execute(
+                'SELECT id FROM fridge_schematic_layouts WHERE temp_key = ? AND section = ?',
+                (temp_key, section)
+            ).fetchone()[0]
 
         conn.commit()
         conn.close()
         return layout_id
 
-    def get_schematic_layout(self, temp_key, section):
-        """Get schematic layout for specific temperature and section"""
+    def get_schematic_layout(self, temp_key, section, fridge_id=None):
+        """Get schematic layout for specific fridge or temperature and section"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        if fridge_id:
+            cursor.execute('''
+                SELECT * FROM fridge_schematic_layouts
+                WHERE fridge_id = ? AND section = ?
+            ''', (fridge_id, section))
+        else:
+            cursor.execute('''
+                SELECT * FROM fridge_schematic_layouts
+                WHERE temp_key = ? AND section = ? AND fridge_id IS NULL
+            ''', (temp_key, section))
+
+        layout = cursor.fetchone()
+        conn.close()
+        return layout
+
+    def get_schematic_layout_by_fridge(self, fridge_id, section):
+        """Get schematic layout for a specific fridge and section"""
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute('''
             SELECT * FROM fridge_schematic_layouts
-            WHERE temp_key = ? AND section = ?
-        ''', (temp_key, section))
+            WHERE fridge_id = ? AND section = ?
+        ''', (fridge_id, section))
         layout = cursor.fetchone()
         conn.close()
         return layout
@@ -1216,3 +1320,83 @@ class Database:
         results = cursor.fetchall()
         conn.close()
         return {row['key']: row['value'] for row in results}
+
+    # ========== FRIDGE MANAGEMENT METHODS ==========
+
+    def get_all_fridges(self):
+        """Get all user-defined fridges"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM fridges ORDER BY name')
+        fridges = cursor.fetchall()
+        conn.close()
+        return fridges
+
+    def get_fridge_by_id(self, fridge_id):
+        """Get a single fridge by ID"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM fridges WHERE id = ?', (fridge_id,))
+        fridge = cursor.fetchone()
+        conn.close()
+        return fridge
+
+    def add_fridge(self, data):
+        """Add a new fridge"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            INSERT INTO fridges (name, temp_type, location, has_door)
+            VALUES (?, ?, ?, ?)
+        ''', (
+            data.get('name'),
+            data.get('temp_type'),
+            data.get('location'),
+            1 if data.get('has_door', True) else 0
+        ))
+
+        fridge_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return fridge_id
+
+    def update_fridge(self, fridge_id, data):
+        """Update a fridge"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            UPDATE fridges SET
+                name = ?,
+                temp_type = ?,
+                location = ?,
+                has_door = ?
+            WHERE id = ?
+        ''', (
+            data.get('name'),
+            data.get('temp_type'),
+            data.get('location'),
+            1 if data.get('has_door', True) else 0,
+            fridge_id
+        ))
+
+        conn.commit()
+        conn.close()
+
+    def delete_fridge(self, fridge_id):
+        """Delete a fridge"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM fridges WHERE id = ?', (fridge_id,))
+        conn.commit()
+        conn.close()
+
+    def get_fridges_by_temp_type(self, temp_type):
+        """Get all fridges of a specific temperature type"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM fridges WHERE temp_type = ? ORDER BY name', (temp_type,))
+        fridges = cursor.fetchall()
+        conn.close()
+        return fridges

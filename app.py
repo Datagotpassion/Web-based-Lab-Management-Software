@@ -643,9 +643,29 @@ def schematic_layout_builder():
 
 @app.route('/api/schematic/<temp_key>/<section>', methods=['GET'])
 def get_schematic_layout(temp_key, section):
-    """Get schematic layout and zones for a specific temp/section"""
+    """Get schematic layout and zones for a specific temp/section (legacy, no fridge_id)"""
     try:
         layout = db.get_schematic_layout(temp_key, section)
+        if not layout:
+            return jsonify({'layout': None, 'zones': [], 'occupancy': []})
+
+        zones = db.get_schematic_zones(layout['id'])
+        occupancy = db.get_zone_occupancy(layout['id'])
+
+        return jsonify({
+            'layout': dict(layout),
+            'zones': [dict(z) for z in zones],
+            'occupancy': [dict(o) for o in occupancy]
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/schematic/fridge/<int:fridge_id>/<section>', methods=['GET'])
+def get_schematic_layout_by_fridge(fridge_id, section):
+    """Get schematic layout and zones for a specific fridge and section"""
+    try:
+        layout = db.get_schematic_layout_by_fridge(fridge_id, section)
         if not layout:
             return jsonify({'layout': None, 'zones': [], 'occupancy': []})
 
@@ -668,12 +688,13 @@ def create_schematic_layout():
     temp_key = data.get('temp_key')
     section = data.get('section')
     layout_name = data.get('layout_name')
+    fridge_id = data.get('fridge_id')
 
     if not temp_key or not section:
         return jsonify({'error': 'temp_key and section are required'}), 400
 
     try:
-        layout_id = db.create_schematic_layout(temp_key, section, layout_name)
+        layout_id = db.create_schematic_layout(temp_key, section, layout_name, fridge_id=fridge_id)
         return jsonify({'success': True, 'layout_id': layout_id})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -927,6 +948,73 @@ def get_setting(key):
     """Get a specific setting"""
     value = db.get_setting(key)
     return jsonify({'key': key, 'value': value})
+
+
+# ========== FRIDGE MANAGEMENT ROUTES ==========
+
+@app.route('/api/fridges', methods=['GET'])
+def get_fridges():
+    """Get all user-defined fridges"""
+    fridges = db.get_all_fridges()
+    return jsonify([dict(f) for f in fridges])
+
+
+@app.route('/api/fridges/<int:fridge_id>', methods=['GET'])
+def get_fridge(fridge_id):
+    """Get a single fridge by ID"""
+    fridge = db.get_fridge_by_id(fridge_id)
+    if fridge:
+        return jsonify(dict(fridge))
+    return jsonify({'error': 'Fridge not found'}), 404
+
+
+@app.route('/api/fridges', methods=['POST'])
+def add_fridge():
+    """Add a new fridge"""
+    data = request.json
+    if not data.get('name'):
+        return jsonify({'error': 'Fridge name is required'}), 400
+    if not data.get('temp_type'):
+        return jsonify({'error': 'Temperature type is required'}), 400
+
+    try:
+        fridge_id = db.add_fridge(data)
+        return jsonify({'success': True, 'id': fridge_id})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/fridges/<int:fridge_id>', methods=['PUT'])
+def update_fridge(fridge_id):
+    """Update a fridge"""
+    data = request.json
+    if not data.get('name'):
+        return jsonify({'error': 'Fridge name is required'}), 400
+    if not data.get('temp_type'):
+        return jsonify({'error': 'Temperature type is required'}), 400
+
+    try:
+        db.update_fridge(fridge_id, data)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/fridges/<int:fridge_id>', methods=['DELETE'])
+def delete_fridge(fridge_id):
+    """Delete a fridge"""
+    try:
+        db.delete_fridge(fridge_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/fridges/by-temp/<temp_type>', methods=['GET'])
+def get_fridges_by_temp(temp_type):
+    """Get all fridges of a specific temperature type"""
+    fridges = db.get_fridges_by_temp_type(temp_type)
+    return jsonify([dict(f) for f in fridges])
 
 
 if __name__ == '__main__':
