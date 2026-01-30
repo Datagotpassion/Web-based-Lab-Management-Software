@@ -246,9 +246,25 @@ class Database:
                 validated TEXT,
                 notes TEXT,
                 fridge_region_id INTEGER,
+                is_conjugated INTEGER DEFAULT 0,
+                fluorophore TEXT,
+                fluorophore_excitation TEXT,
+                fluorophore_emission TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+
+        # Migration: Add conjugation columns to primary_antibodies if missing
+        cursor.execute("PRAGMA table_info(primary_antibodies)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'is_conjugated' not in columns:
+            cursor.execute('ALTER TABLE primary_antibodies ADD COLUMN is_conjugated INTEGER DEFAULT 0')
+        if 'fluorophore' not in columns:
+            cursor.execute('ALTER TABLE primary_antibodies ADD COLUMN fluorophore TEXT')
+        if 'fluorophore_excitation' not in columns:
+            cursor.execute('ALTER TABLE primary_antibodies ADD COLUMN fluorophore_excitation TEXT')
+        if 'fluorophore_emission' not in columns:
+            cursor.execute('ALTER TABLE primary_antibodies ADD COLUMN fluorophore_emission TEXT')
 
         # Create secondary antibodies table
         cursor.execute('''
@@ -1038,8 +1054,9 @@ class Database:
                 name, target_protein, host_species, clonality, isotype, clone_number,
                 supplier, catalog_number, lot_number, applications, fixation_compatibility,
                 dilution_if, dilution_wb, dilution_ihc, storage_temp, stock_concentration,
-                aliquot_volume, validated, notes, fridge_region_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                aliquot_volume, validated, notes, fridge_region_id,
+                is_conjugated, fluorophore, fluorophore_excitation, fluorophore_emission
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             data.get('name'),
             data.get('target_protein'),
@@ -1060,7 +1077,11 @@ class Database:
             data.get('aliquot_volume'),
             data.get('validated'),
             data.get('notes'),
-            data.get('fridge_region_id')
+            data.get('fridge_region_id'),
+            1 if data.get('is_conjugated') else 0,
+            data.get('fluorophore'),
+            data.get('fluorophore_excitation'),
+            data.get('fluorophore_emission')
         ))
 
         ab_id = cursor.lastrowid
@@ -1080,7 +1101,8 @@ class Database:
                 lot_number = ?, applications = ?, fixation_compatibility = ?,
                 dilution_if = ?, dilution_wb = ?, dilution_ihc = ?, storage_temp = ?,
                 stock_concentration = ?, aliquot_volume = ?, validated = ?, notes = ?,
-                fridge_region_id = ?
+                fridge_region_id = ?, is_conjugated = ?, fluorophore = ?,
+                fluorophore_excitation = ?, fluorophore_emission = ?
             WHERE id = ?
         ''', (
             data.get('name'),
@@ -1103,6 +1125,10 @@ class Database:
             data.get('validated'),
             data.get('notes'),
             data.get('fridge_region_id'),
+            1 if data.get('is_conjugated') else 0,
+            data.get('fluorophore'),
+            data.get('fluorophore_excitation'),
+            data.get('fluorophore_emission'),
             ab_id
         ))
 

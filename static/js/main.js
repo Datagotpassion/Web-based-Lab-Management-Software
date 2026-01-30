@@ -141,7 +141,7 @@ function loadAllZones() {
     });
 }
 
-// Load zones for the selected temperature
+// Load zones for the selected temperature (fetches from all fridges of that temp type)
 function loadZonesForTemperature() {
     const temp = $('#storageTemp').val();
     const zoneSelect = $('#fridgeZone');
@@ -156,14 +156,29 @@ function loadZonesForTemperature() {
     zoneSelect.html('<option value="">Loading zones...</option>');
     zoneHint.text('');
 
-    // Check if any fridge of this temp has door storage
-    const hasDoor = allFridges.some(f => f.temp_type === temp && f.has_door);
-    const sections = hasDoor ? ['body', 'door'] : ['body'];
+    // Get all fridges of this temperature type
+    const fridgesOfTemp = allFridges.filter(f => f.temp_type === temp);
+
+    if (fridgesOfTemp.length === 0) {
+        zoneSelect.html('<option value="">No fridges configured</option>');
+        zoneHint.html('Add fridges in Settings');
+        return;
+    }
+
+    // Build list of all fridge/section combinations to fetch
+    let fetchList = [];
+    fridgesOfTemp.forEach(fridge => {
+        fetchList.push({ fridge: fridge, section: 'body' });
+        if (fridge.has_door) {
+            fetchList.push({ fridge: fridge, section: 'door' });
+        }
+    });
+
     let allZones = [];
     let completed = 0;
 
-    sections.forEach(section => {
-        fetch(`/api/schematic/${temp}/${section}`)
+    fetchList.forEach(item => {
+        fetch(`/api/schematic/fridge/${item.fridge.id}/${item.section}`)
             .then(response => response.json())
             .then(data => {
                 if (data.zones && data.zones.length > 0) {
@@ -171,39 +186,46 @@ function loadZonesForTemperature() {
                         allZones.push({
                             id: zone.id,
                             name: zone.zone_name,
-                            section: section
+                            section: item.section,
+                            fridgeId: item.fridge.id,
+                            fridgeName: item.fridge.name
                         });
                     });
                 }
                 completed++;
 
-                if (completed === sections.length) {
-                    // All sections loaded, populate select
+                if (completed === fetchList.length) {
+                    // All fetches complete, populate select
                     if (allZones.length === 0) {
                         zoneSelect.html('<option value="">No zones configured</option>');
                         zoneHint.html('Configure zones in <a href="/schematic-layout-builder">Layout Builder</a>');
                     } else {
                         let options = '<option value="">Select a zone...</option>';
 
-                        // Group by section
-                        const bodySections = allZones.filter(z => z.section === 'body');
-                        const doorSections = allZones.filter(z => z.section === 'door');
+                        // Group by fridge, then by section
+                        fridgesOfTemp.forEach(fridge => {
+                            const fridgeZones = allZones.filter(z => z.fridgeId === fridge.id);
+                            if (fridgeZones.length > 0) {
+                                const bodyZones = fridgeZones.filter(z => z.section === 'body');
+                                const doorZones = fridgeZones.filter(z => z.section === 'door');
 
-                        if (bodySections.length > 0) {
-                            options += '<optgroup label="Body">';
-                            bodySections.forEach(z => {
-                                options += `<option value="${z.id}">${z.name}</option>`;
-                            });
-                            options += '</optgroup>';
-                        }
+                                if (bodyZones.length > 0) {
+                                    options += `<optgroup label="${fridge.name} - Body">`;
+                                    bodyZones.forEach(z => {
+                                        options += `<option value="${z.id}">${z.name}</option>`;
+                                    });
+                                    options += '</optgroup>';
+                                }
 
-                        if (doorSections.length > 0) {
-                            options += '<optgroup label="Door">';
-                            doorSections.forEach(z => {
-                                options += `<option value="${z.id}">${z.name}</option>`;
-                            });
-                            options += '</optgroup>';
-                        }
+                                if (doorZones.length > 0) {
+                                    options += `<optgroup label="${fridge.name} - Door">`;
+                                    doorZones.forEach(z => {
+                                        options += `<option value="${z.id}">${z.name}</option>`;
+                                    });
+                                    options += '</optgroup>';
+                                }
+                            }
+                        });
 
                         zoneSelect.html(options);
                         zoneHint.text('');
@@ -211,7 +233,7 @@ function loadZonesForTemperature() {
                 }
             })
             .catch(error => {
-                console.error(`Error loading zones for ${temp}/${section}:`, error);
+                console.error(`Error loading zones for fridge ${item.fridge.id}/${item.section}:`, error);
                 completed++;
             });
     });
@@ -372,7 +394,7 @@ function editRecord(id) {
         });
 }
 
-// Load zones with callback (for edit form)
+// Load zones with callback (for edit form) - fetches from all fridges of that temp type
 function loadZonesForTemperatureWithCallback(temp, callback) {
     const zoneSelect = $('#fridgeZone');
     const zoneHint = $('#zoneHint');
@@ -387,14 +409,30 @@ function loadZonesForTemperatureWithCallback(temp, callback) {
     zoneSelect.html('<option value="">Loading zones...</option>');
     zoneHint.text('');
 
-    // Check if any fridge of this temp has door storage
-    const hasDoor = allFridges.some(f => f.temp_type === temp && f.has_door);
-    const sections = hasDoor ? ['body', 'door'] : ['body'];
+    // Get all fridges of this temperature type
+    const fridgesOfTemp = allFridges.filter(f => f.temp_type === temp);
+
+    if (fridgesOfTemp.length === 0) {
+        zoneSelect.html('<option value="">No fridges configured</option>');
+        zoneHint.html('Add fridges in Settings');
+        if (callback) callback();
+        return;
+    }
+
+    // Build list of all fridge/section combinations to fetch
+    let fetchList = [];
+    fridgesOfTemp.forEach(fridge => {
+        fetchList.push({ fridge: fridge, section: 'body' });
+        if (fridge.has_door) {
+            fetchList.push({ fridge: fridge, section: 'door' });
+        }
+    });
+
     let allZones = [];
     let completed = 0;
 
-    sections.forEach(section => {
-        fetch(`/api/schematic/${temp}/${section}`)
+    fetchList.forEach(item => {
+        fetch(`/api/schematic/fridge/${item.fridge.id}/${item.section}`)
             .then(response => response.json())
             .then(data => {
                 if (data.zones && data.zones.length > 0) {
@@ -402,37 +440,45 @@ function loadZonesForTemperatureWithCallback(temp, callback) {
                         allZones.push({
                             id: zone.id,
                             name: zone.zone_name,
-                            section: section
+                            section: item.section,
+                            fridgeId: item.fridge.id,
+                            fridgeName: item.fridge.name
                         });
                     });
                 }
                 completed++;
 
-                if (completed === sections.length) {
+                if (completed === fetchList.length) {
                     if (allZones.length === 0) {
                         zoneSelect.html('<option value="">No zones configured</option>');
                         zoneHint.html('Configure zones in <a href="/schematic-layout-builder">Layout Builder</a>');
                     } else {
                         let options = '<option value="">Select a zone...</option>';
 
-                        const bodySections = allZones.filter(z => z.section === 'body');
-                        const doorSections = allZones.filter(z => z.section === 'door');
+                        // Group by fridge, then by section
+                        fridgesOfTemp.forEach(fridge => {
+                            const fridgeZones = allZones.filter(z => z.fridgeId === fridge.id);
+                            if (fridgeZones.length > 0) {
+                                const bodyZones = fridgeZones.filter(z => z.section === 'body');
+                                const doorZones = fridgeZones.filter(z => z.section === 'door');
 
-                        if (bodySections.length > 0) {
-                            options += '<optgroup label="Body">';
-                            bodySections.forEach(z => {
-                                options += `<option value="${z.id}">${z.name}</option>`;
-                            });
-                            options += '</optgroup>';
-                        }
+                                if (bodyZones.length > 0) {
+                                    options += `<optgroup label="${fridge.name} - Body">`;
+                                    bodyZones.forEach(z => {
+                                        options += `<option value="${z.id}">${z.name}</option>`;
+                                    });
+                                    options += '</optgroup>';
+                                }
 
-                        if (doorSections.length > 0) {
-                            options += '<optgroup label="Door">';
-                            doorSections.forEach(z => {
-                                options += `<option value="${z.id}">${z.name}</option>`;
-                            });
-                            options += '</optgroup>';
-                        }
+                                if (doorZones.length > 0) {
+                                    options += `<optgroup label="${fridge.name} - Door">`;
+                                    doorZones.forEach(z => {
+                                        options += `<option value="${z.id}">${z.name}</option>`;
+                                    });
+                                    options += '</optgroup>';
+                                }
+                            }
+                        });
 
                         zoneSelect.html(options);
                         zoneHint.text('');
@@ -441,9 +487,9 @@ function loadZonesForTemperatureWithCallback(temp, callback) {
                 }
             })
             .catch(error => {
-                console.error(`Error loading zones for ${temp}/${section}:`, error);
+                console.error(`Error loading zones for fridge ${item.fridge.id}/${item.section}:`, error);
                 completed++;
-                if (completed === sections.length && callback) callback();
+                if (completed === fetchList.length && callback) callback();
             });
     });
 }
@@ -558,6 +604,12 @@ function loadFridgeDisplays() {
             locationHtml = `<small class="text-white-50">(${fridge.location})</small>`;
         }
 
+        // Create section placeholders to ensure body always comes before door
+        let sectionPlaceholders = `<div id="fridge-section-${safeId}-body"></div>`;
+        if (fridge.has_door) {
+            sectionPlaceholders += `<div id="fridge-section-${safeId}-door"></div>`;
+        }
+
         const fridgeDiv = $(`
             <div class="fridge-section mb-3" style="background: white; border-radius: 8px; overflow: hidden;">
                 <div class="p-2 text-white text-center" style="background: linear-gradient(135deg, ${getGradientColor(fridge.temp_type)});">
@@ -565,6 +617,7 @@ function loadFridgeDisplays() {
                     <div style="font-size: 0.75rem; opacity: 0.9;">${formatTempLabel(fridge.temp_type)}</div>
                 </div>
                 <div class="p-2" id="fridge-content-${safeId}">
+                    ${sectionPlaceholders}
                 </div>
             </div>
         `);
@@ -591,24 +644,21 @@ function getGradientColor(tempKey) {
 
 function loadSchematicSectionForFridge(fridge, section) {
     const safeId = `fridge-${fridge.id}`;
+    const sectionContainer = $(`#fridge-section-${safeId}-${section}`);
 
     fetch(`/api/schematic/fridge/${fridge.id}/${section}`)
         .then(response => response.json())
         .then(data => {
-            const contentDiv = $(`#fridge-content-${safeId}`);
-
             if (data.zones && data.zones.length > 0) {
-                renderSchematicZones(contentDiv, fridge.temp_type, section, data);
+                renderSchematicZones(sectionContainer, fridge.temp_type, section, data);
             } else {
-                // Show "no layout" message only if no zones exist for this section
-                if (contentDiv.find(`.section-${section}`).length === 0) {
-                    contentDiv.append(`
-                        <div class="section-${section} mb-2">
-                            <small class="text-muted">${section.charAt(0).toUpperCase() + section.slice(1)}: </small>
-                            <a href="/schematic-layout-builder" class="text-primary small">Configure layout</a>
-                        </div>
-                    `);
-                }
+                // Show "no layout" message for this section
+                sectionContainer.html(`
+                    <div class="section-${section} mb-2">
+                        <small class="text-muted">${section.charAt(0).toUpperCase() + section.slice(1)}: </small>
+                        <a href="/schematic-layout-builder" class="text-primary small">Configure layout</a>
+                    </div>
+                `);
             }
         })
         .catch(error => {

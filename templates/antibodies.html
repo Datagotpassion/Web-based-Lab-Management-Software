@@ -73,6 +73,26 @@
         border-radius: 8px;
         margin-bottom: 15px;
     }
+    .match-primary-item {
+        transition: background-color 0.2s;
+    }
+    .match-primary-item:hover {
+        background-color: #f8f9fa;
+    }
+    .match-primary-item .form-check-input:checked + label {
+        font-weight: 500;
+    }
+    .primary-match-section {
+        border-left: 3px solid #0d6efd;
+        padding-left: 10px;
+    }
+    .match-card.border-warning {
+        border-left-color: #ffc107 !important;
+        opacity: 0.7;
+    }
+    .secondary-select:disabled {
+        cursor: not-allowed;
+    }
 </style>
 {% endblock %}
 
@@ -222,17 +242,31 @@
         <div class="row">
             <div class="col-md-5">
                 <div class="card">
-                    <div class="card-header bg-primary text-white">
-                        <i class="bi bi-1-circle"></i> Select Primary Antibody
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-1-circle"></i> Select Primary Antibodies</span>
+                        <small class="badge bg-light text-primary" id="selectedPrimaryCount">0 selected</small>
                     </div>
                     <div class="card-body">
-                        <select class="form-select mb-3" id="matchPrimarySelect">
-                            <option value="">Choose a primary antibody...</option>
-                        </select>
-                        <div id="selectedPrimaryInfo" style="display: none;">
-                            <h6>Selected Primary:</h6>
-                            <div id="selectedPrimaryDetails" class="p-3 bg-light rounded"></div>
+                        <div class="mb-2">
+                            <input type="text" class="form-control form-control-sm" id="matchPrimarySearch" placeholder="Search primaries...">
                         </div>
+                        <div id="matchPrimaryList" style="max-height: 350px; overflow-y: auto;">
+                            <!-- Primary antibodies with checkboxes will be populated here -->
+                        </div>
+                        <div class="mt-2">
+                            <button class="btn btn-sm btn-outline-secondary" onclick="clearPrimarySelections()">Clear All</button>
+                            <button class="btn btn-sm btn-primary float-end" onclick="findMultiMatches()">
+                                <i class="bi bi-search"></i> Find Matches
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Selected Primaries Summary -->
+                <div class="card mt-3" id="selectedPrimaryCard" style="display: none;">
+                    <div class="card-header bg-info text-white">
+                        <i class="bi bi-check2-square"></i> Selected Primaries
+                    </div>
+                    <div class="card-body py-2" id="selectedPrimarySummary">
                     </div>
                 </div>
             </div>
@@ -242,9 +276,14 @@
                         <i class="bi bi-2-circle"></i> Compatible Secondaries
                     </div>
                     <div class="card-body">
+                        <!-- Fluorophore conflict warning -->
+                        <div id="fluorophoreConflictWarning" class="alert alert-warning" style="display: none;">
+                            <i class="bi bi-exclamation-triangle"></i> <strong>Fluorophore Conflict Detected!</strong>
+                            <div id="conflictDetails" class="small mt-1"></div>
+                        </div>
                         <div id="matchResults">
                             <p class="text-muted text-center py-4">
-                                <i class="bi bi-arrow-left"></i> Select a primary antibody to find compatible secondaries
+                                <i class="bi bi-arrow-left"></i> Select primary antibodies and click "Find Matches"
                             </p>
                         </div>
                     </div>
@@ -364,6 +403,118 @@
                             </select>
                         </div>
                     </div>
+                    <!-- Conjugation Section -->
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Conjugated?</label>
+                            <select class="form-select" id="primaryIsConjugated" onchange="togglePrimaryFluorophore()">
+                                <option value="0">No (Unconjugated)</option>
+                                <option value="1">Yes (Direct Detection)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3 mb-3" id="primaryFluorophoreGroup" style="display: none;">
+                            <label class="form-label">Fluorophore/Conjugate</label>
+                            <select class="form-select" id="primaryFluorophore">
+                                <option value="">Select...</option>
+                                <optgroup label="Alexa Fluor Series">
+                                    <option value="Alexa Fluor 350">Alexa Fluor 350</option>
+                                    <option value="Alexa Fluor 405">Alexa Fluor 405</option>
+                                    <option value="Alexa Fluor 430">Alexa Fluor 430</option>
+                                    <option value="Alexa Fluor 488">Alexa Fluor 488</option>
+                                    <option value="Alexa Fluor 514">Alexa Fluor 514</option>
+                                    <option value="Alexa Fluor 532">Alexa Fluor 532</option>
+                                    <option value="Alexa Fluor 546">Alexa Fluor 546</option>
+                                    <option value="Alexa Fluor 555">Alexa Fluor 555</option>
+                                    <option value="Alexa Fluor 568">Alexa Fluor 568</option>
+                                    <option value="Alexa Fluor 594">Alexa Fluor 594</option>
+                                    <option value="Alexa Fluor 610">Alexa Fluor 610</option>
+                                    <option value="Alexa Fluor 633">Alexa Fluor 633</option>
+                                    <option value="Alexa Fluor 647">Alexa Fluor 647</option>
+                                    <option value="Alexa Fluor 660">Alexa Fluor 660</option>
+                                    <option value="Alexa Fluor 680">Alexa Fluor 680</option>
+                                    <option value="Alexa Fluor 700">Alexa Fluor 700</option>
+                                    <option value="Alexa Fluor 750">Alexa Fluor 750</option>
+                                    <option value="Alexa Fluor 790">Alexa Fluor 790</option>
+                                </optgroup>
+                                <optgroup label="Brilliant Violet (BV)">
+                                    <option value="BV421">BV421</option>
+                                    <option value="BV480">BV480</option>
+                                    <option value="BV510">BV510</option>
+                                    <option value="BV605">BV605</option>
+                                    <option value="BV650">BV650</option>
+                                    <option value="BV711">BV711</option>
+                                    <option value="BV750">BV750</option>
+                                    <option value="BV785">BV785</option>
+                                </optgroup>
+                                <optgroup label="Brilliant Blue (BB)">
+                                    <option value="BB515">BB515</option>
+                                    <option value="BB700">BB700</option>
+                                </optgroup>
+                                <optgroup label="Brilliant Ultraviolet (BUV)">
+                                    <option value="BUV395">BUV395</option>
+                                    <option value="BUV496">BUV496</option>
+                                    <option value="BUV563">BUV563</option>
+                                    <option value="BUV615">BUV615</option>
+                                    <option value="BUV661">BUV661</option>
+                                    <option value="BUV737">BUV737</option>
+                                    <option value="BUV805">BUV805</option>
+                                </optgroup>
+                                <optgroup label="Cy Dyes">
+                                    <option value="Cy2">Cy2</option>
+                                    <option value="Cy3">Cy3</option>
+                                    <option value="Cy3.5">Cy3.5</option>
+                                    <option value="Cy5">Cy5</option>
+                                    <option value="Cy5.5">Cy5.5</option>
+                                    <option value="Cy7">Cy7</option>
+                                </optgroup>
+                                <optgroup label="DyLight Series">
+                                    <option value="DyLight 405">DyLight 405</option>
+                                    <option value="DyLight 488">DyLight 488</option>
+                                    <option value="DyLight 550">DyLight 550</option>
+                                    <option value="DyLight 594">DyLight 594</option>
+                                    <option value="DyLight 633">DyLight 633</option>
+                                    <option value="DyLight 650">DyLight 650</option>
+                                    <option value="DyLight 680">DyLight 680</option>
+                                    <option value="DyLight 755">DyLight 755</option>
+                                    <option value="DyLight 800">DyLight 800</option>
+                                </optgroup>
+                                <optgroup label="Classic Fluorophores">
+                                    <option value="FITC">FITC</option>
+                                    <option value="PE">PE (Phycoerythrin)</option>
+                                    <option value="PE-Cy5">PE-Cy5</option>
+                                    <option value="PE-Cy7">PE-Cy7</option>
+                                    <option value="PerCP">PerCP</option>
+                                    <option value="PerCP-Cy5.5">PerCP-Cy5.5</option>
+                                    <option value="APC">APC</option>
+                                    <option value="APC-Cy7">APC-Cy7</option>
+                                    <option value="Pacific Blue">Pacific Blue</option>
+                                    <option value="Pacific Orange">Pacific Orange</option>
+                                    <option value="Texas Red">Texas Red</option>
+                                    <option value="Rhodamine">Rhodamine</option>
+                                    <option value="TRITC">TRITC</option>
+                                </optgroup>
+                                <optgroup label="eFluor Series">
+                                    <option value="eFluor 450">eFluor 450</option>
+                                    <option value="eFluor 506">eFluor 506</option>
+                                    <option value="eFluor 660">eFluor 660</option>
+                                    <option value="eFluor 780">eFluor 780</option>
+                                </optgroup>
+                                <optgroup label="Non-Fluorescent Conjugates">
+                                    <option value="HRP">HRP</option>
+                                    <option value="AP">AP (Alkaline Phosphatase)</option>
+                                    <option value="Biotin">Biotin</option>
+                                </optgroup>
+                            </select>
+                        </div>
+                        <div class="col-md-3 mb-3" id="primaryExcitationGroup" style="display: none;">
+                            <label class="form-label">Excitation (nm)</label>
+                            <input type="text" class="form-control" id="primaryExcitation" placeholder="e.g., 488">
+                        </div>
+                        <div class="col-md-3 mb-3" id="primaryEmissionGroup" style="display: none;">
+                            <label class="form-label">Emission (nm)</label>
+                            <input type="text" class="form-control" id="primaryEmission" placeholder="e.g., 520">
+                        </div>
+                    </div>
                     <div class="row">
                         <div class="col-md-4 mb-3">
                             <label class="form-label">Storage Temp</label>
@@ -413,25 +564,102 @@
                             <input type="text" class="form-control" id="secondaryName" required placeholder="e.g., Goat anti-Mouse IgG">
                         </div>
                         <div class="col-md-6 mb-3">
-                            <label class="form-label">Conjugate</label>
+                            <label class="form-label">Conjugate/Fluorophore</label>
                             <select class="form-select" id="secondaryConjugate">
                                 <option value="">Select...</option>
-                                <option value="Alexa Fluor 488">Alexa Fluor 488</option>
-                                <option value="Alexa Fluor 555">Alexa Fluor 555</option>
-                                <option value="Alexa Fluor 594">Alexa Fluor 594</option>
-                                <option value="Alexa Fluor 647">Alexa Fluor 647</option>
-                                <option value="Alexa Fluor 680">Alexa Fluor 680</option>
-                                <option value="Alexa Fluor 750">Alexa Fluor 750</option>
-                                <option value="FITC">FITC</option>
-                                <option value="PE">PE</option>
-                                <option value="APC">APC</option>
-                                <option value="Cy3">Cy3</option>
-                                <option value="Cy5">Cy5</option>
-                                <option value="HRP">HRP</option>
-                                <option value="AP">AP</option>
-                                <option value="Biotin">Biotin</option>
-                                <option value="DyLight 488">DyLight 488</option>
-                                <option value="DyLight 594">DyLight 594</option>
+                                <optgroup label="Alexa Fluor Series">
+                                    <option value="Alexa Fluor 350">Alexa Fluor 350</option>
+                                    <option value="Alexa Fluor 405">Alexa Fluor 405</option>
+                                    <option value="Alexa Fluor 430">Alexa Fluor 430</option>
+                                    <option value="Alexa Fluor 488">Alexa Fluor 488</option>
+                                    <option value="Alexa Fluor 514">Alexa Fluor 514</option>
+                                    <option value="Alexa Fluor 532">Alexa Fluor 532</option>
+                                    <option value="Alexa Fluor 546">Alexa Fluor 546</option>
+                                    <option value="Alexa Fluor 555">Alexa Fluor 555</option>
+                                    <option value="Alexa Fluor 568">Alexa Fluor 568</option>
+                                    <option value="Alexa Fluor 594">Alexa Fluor 594</option>
+                                    <option value="Alexa Fluor 610">Alexa Fluor 610</option>
+                                    <option value="Alexa Fluor 633">Alexa Fluor 633</option>
+                                    <option value="Alexa Fluor 647">Alexa Fluor 647</option>
+                                    <option value="Alexa Fluor 660">Alexa Fluor 660</option>
+                                    <option value="Alexa Fluor 680">Alexa Fluor 680</option>
+                                    <option value="Alexa Fluor 700">Alexa Fluor 700</option>
+                                    <option value="Alexa Fluor 750">Alexa Fluor 750</option>
+                                    <option value="Alexa Fluor 790">Alexa Fluor 790</option>
+                                </optgroup>
+                                <optgroup label="Brilliant Violet (BV)">
+                                    <option value="BV421">BV421</option>
+                                    <option value="BV480">BV480</option>
+                                    <option value="BV510">BV510</option>
+                                    <option value="BV605">BV605</option>
+                                    <option value="BV650">BV650</option>
+                                    <option value="BV711">BV711</option>
+                                    <option value="BV750">BV750</option>
+                                    <option value="BV785">BV785</option>
+                                </optgroup>
+                                <optgroup label="Brilliant Blue (BB)">
+                                    <option value="BB515">BB515</option>
+                                    <option value="BB700">BB700</option>
+                                </optgroup>
+                                <optgroup label="Brilliant Ultraviolet (BUV)">
+                                    <option value="BUV395">BUV395</option>
+                                    <option value="BUV496">BUV496</option>
+                                    <option value="BUV563">BUV563</option>
+                                    <option value="BUV615">BUV615</option>
+                                    <option value="BUV661">BUV661</option>
+                                    <option value="BUV737">BUV737</option>
+                                    <option value="BUV805">BUV805</option>
+                                </optgroup>
+                                <optgroup label="Cy Dyes">
+                                    <option value="Cy2">Cy2</option>
+                                    <option value="Cy3">Cy3</option>
+                                    <option value="Cy3.5">Cy3.5</option>
+                                    <option value="Cy5">Cy5</option>
+                                    <option value="Cy5.5">Cy5.5</option>
+                                    <option value="Cy7">Cy7</option>
+                                </optgroup>
+                                <optgroup label="DyLight Series">
+                                    <option value="DyLight 405">DyLight 405</option>
+                                    <option value="DyLight 488">DyLight 488</option>
+                                    <option value="DyLight 550">DyLight 550</option>
+                                    <option value="DyLight 594">DyLight 594</option>
+                                    <option value="DyLight 633">DyLight 633</option>
+                                    <option value="DyLight 650">DyLight 650</option>
+                                    <option value="DyLight 680">DyLight 680</option>
+                                    <option value="DyLight 755">DyLight 755</option>
+                                    <option value="DyLight 800">DyLight 800</option>
+                                </optgroup>
+                                <optgroup label="Classic Fluorophores">
+                                    <option value="FITC">FITC</option>
+                                    <option value="PE">PE (Phycoerythrin)</option>
+                                    <option value="PE-Cy5">PE-Cy5</option>
+                                    <option value="PE-Cy7">PE-Cy7</option>
+                                    <option value="PerCP">PerCP</option>
+                                    <option value="PerCP-Cy5.5">PerCP-Cy5.5</option>
+                                    <option value="APC">APC</option>
+                                    <option value="APC-Cy7">APC-Cy7</option>
+                                    <option value="Pacific Blue">Pacific Blue</option>
+                                    <option value="Pacific Orange">Pacific Orange</option>
+                                    <option value="Texas Red">Texas Red</option>
+                                    <option value="Rhodamine">Rhodamine</option>
+                                    <option value="TRITC">TRITC</option>
+                                </optgroup>
+                                <optgroup label="eFluor Series">
+                                    <option value="eFluor 450">eFluor 450</option>
+                                    <option value="eFluor 506">eFluor 506</option>
+                                    <option value="eFluor 660">eFluor 660</option>
+                                    <option value="eFluor 780">eFluor 780</option>
+                                </optgroup>
+                                <optgroup label="IRDye Series (LI-COR)">
+                                    <option value="IRDye 680RD">IRDye 680RD</option>
+                                    <option value="IRDye 800CW">IRDye 800CW</option>
+                                </optgroup>
+                                <optgroup label="Non-Fluorescent Conjugates">
+                                    <option value="HRP">HRP</option>
+                                    <option value="AP">AP (Alkaline Phosphatase)</option>
+                                    <option value="Biotin">Biotin</option>
+                                    <option value="Gold">Gold (Colloidal)</option>
+                                </optgroup>
                             </select>
                         </div>
                     </div>
@@ -576,6 +804,23 @@
 let primaryAntibodies = [];
 let secondaryAntibodies = [];
 
+// Toggle fluorophore fields for primary antibody based on conjugation status
+function togglePrimaryFluorophore() {
+    const isConjugated = $('#primaryIsConjugated').val() === '1';
+    if (isConjugated) {
+        $('#primaryFluorophoreGroup').show();
+        $('#primaryExcitationGroup').show();
+        $('#primaryEmissionGroup').show();
+    } else {
+        $('#primaryFluorophoreGroup').hide();
+        $('#primaryExcitationGroup').hide();
+        $('#primaryEmissionGroup').hide();
+        $('#primaryFluorophore').val('');
+        $('#primaryExcitation').val('');
+        $('#primaryEmission').val('');
+    }
+}
+
 $(document).ready(function() {
     loadPrimaryAntibodies();
     loadSecondaryAntibodies();
@@ -584,16 +829,8 @@ $(document).ready(function() {
     $('#primarySearch, #primaryHostFilter, #primaryClonalityFilter').on('input change', filterPrimary);
     $('#secondarySearch, #secondaryTargetFilter, #secondaryConjugateFilter, #secondaryFormatFilter').on('input change', filterSecondary);
 
-    // Match selector
-    $('#matchPrimarySelect').on('change', function() {
-        const id = $(this).val();
-        if (id) {
-            findMatches(id);
-        } else {
-            $('#selectedPrimaryInfo').hide();
-            $('#matchResults').html('<p class="text-muted text-center py-4"><i class="bi bi-arrow-left"></i> Select a primary antibody to find compatible secondaries</p>');
-        }
-    });
+    // Match selector - multi-select is now handled via checkboxes
+    // The findMultiMatches() function is called by the "Find Matches" button
 });
 
 function loadPrimaryAntibodies() {
@@ -621,6 +858,9 @@ function displayPrimary(antibodies) {
     }
 
     antibodies.forEach(ab => {
+        const conjugateInfo = ab.is_conjugated && ab.fluorophore ?
+            `<span class="conjugate-badge">${ab.fluorophore}</span>` :
+            (ab.is_conjugated ? '<span class="badge bg-info">Conjugated</span>' : '');
         const card = $(`
             <div class="card ab-card primary">
                 <div class="card-body py-2">
@@ -632,6 +872,7 @@ function displayPrimary(antibodies) {
                             <span class="host-badge">${ab.host_species || 'Unknown host'}</span>
                             ${ab.isotype ? `<span class="isotype-badge">${ab.isotype}</span>` : ''}
                             ${ab.clonality ? `<span class="badge bg-secondary">${ab.clonality}</span>` : ''}
+                            ${conjugateInfo}
                             ${ab.validated === 'Yes' ? '<span class="badge bg-success">Validated</span>' : ''}
                             <br>
                             <small class="text-muted">
@@ -738,6 +979,8 @@ function showAddPrimaryModal() {
     $('#primaryModalTitle').text('Add Primary Antibody');
     $('#primaryForm')[0].reset();
     $('#primaryId').val('');
+    $('#primaryIsConjugated').val('0');
+    togglePrimaryFluorophore();
     $('#primaryModal').modal('show');
 }
 
@@ -764,12 +1007,19 @@ function editPrimary(id) {
         $('#primaryAliquot').val(ab.aliquot_volume);
         $('#primaryValidated').val(ab.validated);
         $('#primaryNotes').val(ab.notes);
+        // Conjugation fields
+        $('#primaryIsConjugated').val(ab.is_conjugated ? '1' : '0');
+        $('#primaryFluorophore').val(ab.fluorophore || '');
+        $('#primaryExcitation').val(ab.fluorophore_excitation || '');
+        $('#primaryEmission').val(ab.fluorophore_emission || '');
+        togglePrimaryFluorophore();
         $('#primaryModal').modal('show');
     });
 }
 
 function savePrimary() {
     const id = $('#primaryId').val();
+    const isConjugated = $('#primaryIsConjugated').val() === '1';
     const data = {
         name: $('#primaryName').val(),
         target_protein: $('#primaryTarget').val(),
@@ -789,7 +1039,11 @@ function savePrimary() {
         stock_concentration: $('#primaryStockConc').val(),
         aliquot_volume: $('#primaryAliquot').val(),
         validated: $('#primaryValidated').val(),
-        notes: $('#primaryNotes').val()
+        notes: $('#primaryNotes').val(),
+        is_conjugated: isConjugated,
+        fluorophore: isConjugated ? $('#primaryFluorophore').val() : '',
+        fluorophore_excitation: isConjugated ? $('#primaryExcitation').val() : '',
+        fluorophore_emission: isConjugated ? $('#primaryEmission').val() : ''
     };
 
     const url = id ? `/api/antibodies/primary/${id}` : '/api/antibodies/primary';
@@ -913,52 +1167,254 @@ function deleteSecondary(id) {
 }
 
 function populateMatchSelect(antibodies) {
-    const select = $('#matchPrimarySelect');
-    select.empty().append('<option value="">Choose a primary antibody...</option>');
+    const container = $('#matchPrimaryList');
+    container.empty();
+
+    if (antibodies.length === 0) {
+        container.html('<p class="text-muted text-center">No primary antibodies available</p>');
+        return;
+    }
 
     antibodies.forEach(ab => {
-        select.append(`<option value="${ab.id}">${ab.name} (${ab.host_species || '?'} ${ab.isotype || ''})</option>`);
+        const conjugateInfo = ab.is_conjugated ?
+            `<span class="badge bg-warning text-dark ms-1" title="Conjugated">${ab.fluorophore || 'Conj'}</span>` : '';
+        const item = $(`
+            <div class="form-check match-primary-item p-2 border-bottom" data-name="${(ab.name || '').toLowerCase()}" data-host="${(ab.host_species || '').toLowerCase()}">
+                <input class="form-check-input match-primary-checkbox" type="checkbox" value="${ab.id}" id="matchPrimary${ab.id}"
+                    data-name="${ab.name}" data-host="${ab.host_species || ''}" data-isotype="${ab.isotype || ''}"
+                    data-conjugated="${ab.is_conjugated || 0}" data-fluorophore="${ab.fluorophore || ''}">
+                <label class="form-check-label w-100" for="matchPrimary${ab.id}" style="cursor: pointer;">
+                    <strong>${ab.name}</strong>${conjugateInfo}<br>
+                    <small class="text-muted">
+                        <span class="host-badge">${ab.host_species || '?'}</span>
+                        <span class="isotype-badge">${ab.isotype || '?'}</span>
+                    </small>
+                </label>
+            </div>
+        `);
+        container.append(item);
+    });
+
+    // Add checkbox change handler
+    $('.match-primary-checkbox').on('change', function() {
+        updateSelectedPrimaryCount();
+        updateSelectedPrimarySummary();
+    });
+
+    // Add search filter
+    $('#matchPrimarySearch').off('input').on('input', function() {
+        const search = $(this).val().toLowerCase();
+        $('.match-primary-item').each(function() {
+            const name = $(this).data('name');
+            const host = $(this).data('host');
+            if (name.includes(search) || host.includes(search)) {
+                $(this).show();
+            } else {
+                $(this).hide();
+            }
+        });
     });
 }
 
-function findMatches(primaryId) {
-    // Show selected primary info
-    const primary = primaryAntibodies.find(ab => ab.id == primaryId);
-    if (primary) {
-        $('#selectedPrimaryDetails').html(`
-            <strong>${primary.name}</strong><br>
-            Host: <span class="host-badge">${primary.host_species || '?'}</span>
-            Isotype: <span class="isotype-badge">${primary.isotype || '?'}</span>
-            ${primary.clonality ? `<br>Clonality: ${primary.clonality}` : ''}
-        `);
-        $('#selectedPrimaryInfo').show();
+function updateSelectedPrimaryCount() {
+    const count = $('.match-primary-checkbox:checked').length;
+    $('#selectedPrimaryCount').text(count + ' selected');
+}
+
+function updateSelectedPrimarySummary() {
+    const selected = getSelectedPrimaries();
+    const card = $('#selectedPrimaryCard');
+    const container = $('#selectedPrimarySummary');
+
+    if (selected.length === 0) {
+        card.hide();
+        return;
     }
 
-    // Find matches
-    $.get(`/api/antibodies/match/${primaryId}`, function(matches) {
-        const container = $('#matchResults');
+    card.show();
+    container.empty();
+
+    selected.forEach((p, index) => {
+        const fluorophoreInfo = p.fluorophore ?
+            `<span class="badge bg-warning text-dark">${p.fluorophore}</span>` : '';
+        container.append(`
+            <div class="d-flex justify-content-between align-items-center py-1 ${index > 0 ? 'border-top' : ''}">
+                <span>
+                    <strong>${p.name}</strong>
+                    <small class="text-muted">(${p.host} ${p.isotype})</small>
+                    ${fluorophoreInfo}
+                </span>
+                <button class="btn btn-sm btn-link text-danger p-0" onclick="deselectPrimary(${p.id})">
+                    <i class="bi bi-x-circle"></i>
+                </button>
+            </div>
+        `);
+    });
+}
+
+function getSelectedPrimaries() {
+    const selected = [];
+    $('.match-primary-checkbox:checked').each(function() {
+        selected.push({
+            id: $(this).val(),
+            name: $(this).data('name'),
+            host: $(this).data('host'),
+            isotype: $(this).data('isotype'),
+            isConjugated: $(this).data('conjugated') == 1,
+            fluorophore: $(this).data('fluorophore')
+        });
+    });
+    return selected;
+}
+
+function deselectPrimary(id) {
+    $(`#matchPrimary${id}`).prop('checked', false);
+    updateSelectedPrimaryCount();
+    updateSelectedPrimarySummary();
+}
+
+function clearPrimarySelections() {
+    $('.match-primary-checkbox').prop('checked', false);
+    updateSelectedPrimaryCount();
+    updateSelectedPrimarySummary();
+    $('#matchResults').html('<p class="text-muted text-center py-4"><i class="bi bi-arrow-left"></i> Select primary antibodies and click "Find Matches"</p>');
+    $('#fluorophoreConflictWarning').hide();
+}
+
+// Track used fluorophores across all matches
+let usedFluorophores = new Set();
+
+function findMultiMatches() {
+    const selected = getSelectedPrimaries();
+
+    if (selected.length === 0) {
+        alert('Please select at least one primary antibody');
+        return;
+    }
+
+    const container = $('#matchResults');
+    container.html('<p class="text-center"><i class="bi bi-hourglass-split"></i> Finding matches...</p>');
+
+    // Reset used fluorophores
+    usedFluorophores = new Set();
+
+    // Track fluorophores from conjugated primaries
+    selected.forEach(p => {
+        if (p.isConjugated && p.fluorophore) {
+            usedFluorophores.add(p.fluorophore.toLowerCase());
+        }
+    });
+
+    // Fetch matches for all selected primaries
+    const promises = selected.map(p =>
+        $.get(`/api/antibodies/match/${p.id}`).then(matches => ({
+            primary: p,
+            matches: matches
+        }))
+    );
+
+    Promise.all(promises).then(results => {
         container.empty();
 
-        if (matches.length === 0) {
+        // Check for conflicts and display warnings
+        checkFluorophoreConflicts(results);
+
+        // Display results for each primary
+        results.forEach((result, index) => {
+            const primarySection = buildPrimaryMatchSection(result.primary, result.matches, index, selected.length);
+            container.append(primarySection);
+        });
+
+        if (results.every(r => r.matches.length === 0)) {
             container.html(`
                 <div class="alert alert-warning">
                     <i class="bi bi-exclamation-triangle"></i>
-                    No compatible secondary antibodies found.
-                    <br><small>Add secondaries that target <strong>${primary?.host_species || 'this species'}</strong>.</small>
+                    No compatible secondary antibodies found for any selected primary.
                 </div>
             `);
-            return;
         }
+    }).catch(err => {
+        container.html(`<div class="alert alert-danger">Error finding matches: ${err.message}</div>`);
+    });
+}
 
+function checkFluorophoreConflicts(results) {
+    const warningDiv = $('#fluorophoreConflictWarning');
+    const detailsDiv = $('#conflictDetails');
+    const conflicts = [];
+
+    // Get selected primaries with their fluorophores
+    const selected = getSelectedPrimaries();
+    const primaryFluorophores = {};
+
+    selected.forEach(p => {
+        if (p.isConjugated && p.fluorophore) {
+            const fluor = p.fluorophore.toLowerCase();
+            if (!primaryFluorophores[fluor]) {
+                primaryFluorophores[fluor] = [];
+            }
+            primaryFluorophores[fluor].push(p.name);
+        }
+    });
+
+    // Check for duplicate fluorophores among conjugated primaries
+    Object.entries(primaryFluorophores).forEach(([fluor, primaries]) => {
+        if (primaries.length > 1) {
+            conflicts.push(`<strong>${fluor}</strong>: Used by primaries: ${primaries.join(', ')}`);
+        }
+    });
+
+    if (conflicts.length > 0) {
+        detailsDiv.html(conflicts.map(c => `<div>• ${c}</div>`).join(''));
+        warningDiv.show();
+    } else {
+        warningDiv.hide();
+    }
+}
+
+function buildPrimaryMatchSection(primary, matches, index, totalPrimaries) {
+    const section = $(`
+        <div class="primary-match-section mb-3">
+            <div class="bg-light p-2 rounded mb-2 d-flex justify-content-between align-items-center">
+                <div>
+                    <strong><i class="bi bi-${index + 1}-circle"></i> ${primary.name}</strong>
+                    <small class="text-muted ms-2">(${primary.host} ${primary.isotype})</small>
+                    ${primary.isConjugated ? `<span class="badge bg-warning text-dark ms-2">${primary.fluorophore || 'Conjugated'}</span>` : ''}
+                </div>
+                <span class="badge bg-primary">${matches.length} matches</span>
+            </div>
+            <div class="match-list" id="matchList${primary.id}"></div>
+        </div>
+    `);
+
+    const matchList = section.find('.match-list');
+
+    if (matches.length === 0) {
+        matchList.html(`
+            <div class="alert alert-secondary py-2 mb-2">
+                <small>No compatible secondaries found. Add secondaries that target <strong>${primary.host}</strong>.</small>
+            </div>
+        `);
+    } else {
         matches.forEach(match => {
             const ab = match.antibody;
+            const fluorophore = ab.conjugate ? ab.conjugate.toLowerCase() : '';
+            const isConflict = fluorophore && usedFluorophores.has(fluorophore);
+
             const card = $(`
-                <div class="card match-card">
+                <div class="card match-card mb-2 ${isConflict ? 'border-warning' : ''}">
                     <div class="card-body py-2">
                         <div class="d-flex justify-content-between align-items-start">
                             <div>
-                                <strong>${ab.name}</strong>
-                                <br>
+                                <div class="d-flex align-items-center">
+                                    <input type="checkbox" class="form-check-input me-2 secondary-select"
+                                        data-primary-id="${primary.id}"
+                                        data-secondary-id="${ab.id}"
+                                        data-fluorophore="${ab.conjugate || ''}"
+                                        ${isConflict ? 'disabled' : ''}>
+                                    <strong>${ab.name}</strong>
+                                    ${isConflict ? '<span class="badge bg-warning text-dark ms-2"><i class="bi bi-exclamation-triangle"></i> Fluorophore conflict</span>' : ''}
+                                </div>
                                 <span class="target-badge">Anti-${ab.target_species}</span>
                                 ${ab.target_isotype ? `<span class="isotype-badge">${ab.target_isotype}</span>` : ''}
                                 ${ab.conjugate ? `<span class="conjugate-badge">${ab.conjugate}</span>` : ''}
@@ -974,9 +1430,54 @@ function findMatches(primaryId) {
                     </div>
                 </div>
             `);
-            container.append(card);
+
+            // Add checkbox handler to track used fluorophores
+            card.find('.secondary-select').on('change', function() {
+                const fluor = $(this).data('fluorophore').toLowerCase();
+                if (fluor) {
+                    if ($(this).is(':checked')) {
+                        usedFluorophores.add(fluor);
+                    } else {
+                        // Only remove if no other selected secondary uses this fluorophore
+                        const otherUsing = $(`.secondary-select:checked[data-fluorophore="${$(this).data('fluorophore')}"]`).not(this).length;
+                        if (otherUsing === 0) {
+                            usedFluorophores.delete(fluor);
+                        }
+                    }
+                    updateFluorophoreConflictDisplay();
+                }
+            });
+
+            matchList.append(card);
         });
+    }
+
+    return section;
+}
+
+function updateFluorophoreConflictDisplay() {
+    // Update the conflict highlighting on all secondary cards
+    $('.secondary-select').each(function() {
+        const fluor = $(this).data('fluorophore').toLowerCase();
+        const card = $(this).closest('.card');
+        const isChecked = $(this).is(':checked');
+
+        if (fluor && !isChecked) {
+            if (usedFluorophores.has(fluor)) {
+                card.addClass('border-warning');
+                $(this).prop('disabled', true);
+                if (!card.find('.conflict-badge').length) {
+                    card.find('strong').first().after('<span class="badge bg-warning text-dark ms-2 conflict-badge"><i class="bi bi-exclamation-triangle"></i> Fluorophore in use</span>');
+                }
+            } else {
+                card.removeClass('border-warning');
+                $(this).prop('disabled', false);
+                card.find('.conflict-badge').remove();
+            }
+        }
     });
 }
+
+// Old findMatches function removed - replaced by findMultiMatches
 </script>
 {% endblock %}
