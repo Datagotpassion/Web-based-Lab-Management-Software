@@ -93,6 +93,40 @@
     .secondary-select:disabled {
         cursor: not-allowed;
     }
+    /* Selected secondary highlighting */
+    .match-card.selected {
+        background-color: #e8f5e9;
+        border-left-color: #27ae60 !important;
+        border-left-width: 6px !important;
+        box-shadow: 0 2px 8px rgba(39, 174, 96, 0.2);
+    }
+    .match-card.selected .secondary-select {
+        accent-color: #27ae60;
+    }
+    /* Cross-reactivity conflict styling */
+    .match-card.cross-reactivity-conflict {
+        border-left-color: #dc3545 !important;
+        opacity: 0.6;
+        background-color: #fff5f5;
+    }
+    /* Consolidate panel */
+    .consolidate-panel {
+        border: 2px solid #3498db;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    }
+    .consolidate-item {
+        background: white;
+        border-radius: 6px;
+        padding: 10px;
+        margin-bottom: 8px;
+        border-left: 4px solid #9b59b6;
+    }
+    .consolidate-item .secondary-info {
+        border-left: 4px solid #27ae60;
+        padding-left: 10px;
+        margin-top: 8px;
+    }
 </style>
 {% endblock %}
 
@@ -272,8 +306,12 @@
             </div>
             <div class="col-md-7">
                 <div class="card">
-                    <div class="card-header bg-success text-white">
-                        <i class="bi bi-2-circle"></i> Compatible Secondaries
+                    <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-2-circle"></i> Compatible Secondaries</span>
+                        <a href="https://www.thermofisher.com/us/en/home/life-science/cell-analysis/labeling-chemistry/fluorescence-spectraviewer.html"
+                           target="_blank" class="btn btn-sm btn-light" title="Open Thermo Fisher SpectraViewer">
+                            <i class="bi bi-rainbow"></i> SpectraViewer
+                        </a>
                     </div>
                     <div class="card-body">
                         <!-- Fluorophore conflict warning -->
@@ -281,11 +319,28 @@
                             <i class="bi bi-exclamation-triangle"></i> <strong>Fluorophore Conflict Detected!</strong>
                             <div id="conflictDetails" class="small mt-1"></div>
                         </div>
+                        <!-- Cross-reactivity warning -->
+                        <div id="crossReactivityWarning" class="alert alert-danger" style="display: none;">
+                            <i class="bi bi-x-octagon"></i> <strong>Cross-Reactivity Warning!</strong>
+                            <div id="crossReactivityDetails" class="small mt-1"></div>
+                        </div>
                         <div id="matchResults">
                             <p class="text-muted text-center py-4">
                                 <i class="bi bi-arrow-left"></i> Select primary antibodies and click "Find Matches"
                             </p>
                         </div>
+                    </div>
+                </div>
+                <!-- Consolidate Panel -->
+                <div class="card mt-3 consolidate-panel" id="consolidatePanel" style="display: none;">
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-collection"></i> Final Antibody Panel</span>
+                        <button class="btn btn-sm btn-light" onclick="copyPanelToClipboard()">
+                            <i class="bi bi-clipboard"></i> Copy
+                        </button>
+                    </div>
+                    <div class="card-body" id="consolidateContent">
+                        <!-- Panel summary will be populated here -->
                     </div>
                 </div>
             </div>
@@ -1279,10 +1334,23 @@ function clearPrimarySelections() {
     updateSelectedPrimarySummary();
     $('#matchResults').html('<p class="text-muted text-center py-4"><i class="bi bi-arrow-left"></i> Select primary antibodies and click "Find Matches"</p>');
     $('#fluorophoreConflictWarning').hide();
+    $('#crossReactivityWarning').hide();
+    $('#consolidatePanel').hide();
+    // Reset tracking
+    usedFluorophores = new Set();
+    selectedSecondaryHosts = new Set();
+    selectedSecondaryTargets = new Set();
+    selectedSecondaries = new Map();
 }
 
 // Track used fluorophores across all matches
 let usedFluorophores = new Set();
+// Track cross-reactivity: host species of selected secondaries
+let selectedSecondaryHosts = new Set();
+// Track cross-reactivity: target species of selected secondaries
+let selectedSecondaryTargets = new Set();
+// Track selected secondaries for consolidation
+let selectedSecondaries = new Map(); // primaryId -> {primary, secondary}
 
 function findMultiMatches() {
     const selected = getSelectedPrimaries();
@@ -1295,8 +1363,11 @@ function findMultiMatches() {
     const container = $('#matchResults');
     container.html('<p class="text-center"><i class="bi bi-hourglass-split"></i> Finding matches...</p>');
 
-    // Reset used fluorophores
+    // Reset tracking sets
     usedFluorophores = new Set();
+    selectedSecondaryHosts = new Set();
+    selectedSecondaryTargets = new Set();
+    selectedSecondaries = new Map();
 
     // Track fluorophores from conjugated primaries
     selected.forEach(p => {
@@ -1304,6 +1375,9 @@ function findMultiMatches() {
             usedFluorophores.add(p.fluorophore.toLowerCase());
         }
     });
+
+    // Hide consolidate panel initially
+    $('#consolidatePanel').hide();
 
     // Fetch matches for all selected primaries
     const promises = selected.map(p =>
@@ -1399,22 +1473,33 @@ function buildPrimaryMatchSection(primary, matches, index, totalPrimaries) {
         matches.forEach(match => {
             const ab = match.antibody;
             const fluorophore = ab.conjugate ? ab.conjugate.toLowerCase() : '';
-            const isConflict = fluorophore && usedFluorophores.has(fluorophore);
+            const hostSpecies = ab.host_species ? ab.host_species.toLowerCase() : '';
+            const targetSpecies = ab.target_species ? ab.target_species.toLowerCase() : '';
+            const isFluorConflict = fluorophore && usedFluorophores.has(fluorophore);
+            const isCrossReactivity = (hostSpecies && selectedSecondaryTargets.has(hostSpecies)) ||
+                                       (targetSpecies && selectedSecondaryHosts.has(targetSpecies));
+            const hasConflict = isFluorConflict || isCrossReactivity;
 
             const card = $(`
-                <div class="card match-card mb-2 ${isConflict ? 'border-warning' : ''}">
+                <div class="card match-card mb-2 ${isFluorConflict ? 'border-warning' : ''} ${isCrossReactivity ? 'cross-reactivity-conflict' : ''}">
                     <div class="card-body py-2">
                         <div class="d-flex justify-content-between align-items-start">
                             <div>
                                 <div class="d-flex align-items-center">
                                     <input type="checkbox" class="form-check-input me-2 secondary-select"
                                         data-primary-id="${primary.id}"
+                                        data-primary-name="${primary.name}"
                                         data-secondary-id="${ab.id}"
+                                        data-secondary-name="${ab.name}"
                                         data-fluorophore="${ab.conjugate || ''}"
-                                        ${isConflict ? 'disabled' : ''}>
+                                        data-host="${ab.host_species || ''}"
+                                        data-target="${ab.target_species || ''}"
+                                        ${hasConflict ? 'disabled' : ''}>
                                     <strong>${ab.name}</strong>
-                                    ${isConflict ? '<span class="badge bg-warning text-dark ms-2"><i class="bi bi-exclamation-triangle"></i> Fluorophore conflict</span>' : ''}
+                                    ${isFluorConflict ? '<span class="badge bg-warning text-dark ms-2 conflict-badge"><i class="bi bi-exclamation-triangle"></i> Fluorophore conflict</span>' : ''}
+                                    ${isCrossReactivity ? '<span class="badge bg-danger ms-2 cross-react-badge"><i class="bi bi-x-octagon"></i> Cross-reactivity</span>' : ''}
                                 </div>
+                                <span class="host-badge">Host: ${ab.host_species || '?'}</span>
                                 <span class="target-badge">Anti-${ab.target_species}</span>
                                 ${ab.target_isotype ? `<span class="isotype-badge">${ab.target_isotype}</span>` : ''}
                                 ${ab.conjugate ? `<span class="conjugate-badge">${ab.conjugate}</span>` : ''}
@@ -1431,21 +1516,65 @@ function buildPrimaryMatchSection(primary, matches, index, totalPrimaries) {
                 </div>
             `);
 
-            // Add checkbox handler to track used fluorophores
+            // Add checkbox handler for selection tracking
             card.find('.secondary-select').on('change', function() {
-                const fluor = $(this).data('fluorophore').toLowerCase();
-                if (fluor) {
-                    if ($(this).is(':checked')) {
-                        usedFluorophores.add(fluor);
-                    } else {
-                        // Only remove if no other selected secondary uses this fluorophore
-                        const otherUsing = $(`.secondary-select:checked[data-fluorophore="${$(this).data('fluorophore')}"]`).not(this).length;
-                        if (otherUsing === 0) {
-                            usedFluorophores.delete(fluor);
-                        }
+                const $this = $(this);
+                const fluor = $this.data('fluorophore').toLowerCase();
+                const host = $this.data('host').toLowerCase();
+                const target = $this.data('target').toLowerCase();
+                const primaryId = $this.data('primary-id');
+                const secondaryId = $this.data('secondary-id');
+                const primaryName = $this.data('primary-name');
+                const secondaryName = $this.data('secondary-name');
+                const $card = $this.closest('.card');
+
+                if ($this.is(':checked')) {
+                    // Add to tracking sets
+                    if (fluor) usedFluorophores.add(fluor);
+                    if (host) selectedSecondaryHosts.add(host);
+                    if (target) selectedSecondaryTargets.add(target);
+
+                    // Add selected highlighting
+                    $card.addClass('selected');
+
+                    // Track for consolidation
+                    selectedSecondaries.set(primaryId + '-' + secondaryId, {
+                        primaryId: primaryId,
+                        primaryName: primaryName,
+                        secondaryId: secondaryId,
+                        secondaryName: secondaryName,
+                        fluorophore: $this.data('fluorophore'),
+                        host: $this.data('host'),
+                        target: $this.data('target')
+                    });
+                } else {
+                    // Remove from tracking (only if no other selected uses it)
+                    if (fluor) {
+                        const otherFluor = $(`.secondary-select:checked[data-fluorophore="${$this.data('fluorophore')}"]`).not(this).length;
+                        if (otherFluor === 0) usedFluorophores.delete(fluor);
                     }
-                    updateFluorophoreConflictDisplay();
+                    if (host) {
+                        const otherHost = $(`.secondary-select:checked`).not(this).filter(function() {
+                            return $(this).data('host').toLowerCase() === host;
+                        }).length;
+                        if (otherHost === 0) selectedSecondaryHosts.delete(host);
+                    }
+                    if (target) {
+                        const otherTarget = $(`.secondary-select:checked`).not(this).filter(function() {
+                            return $(this).data('target').toLowerCase() === target;
+                        }).length;
+                        if (otherTarget === 0) selectedSecondaryTargets.delete(target);
+                    }
+
+                    // Remove selected highlighting
+                    $card.removeClass('selected');
+
+                    // Remove from consolidation
+                    selectedSecondaries.delete(primaryId + '-' + secondaryId);
                 }
+
+                updateConflictDisplay();
+                updateConsolidatePanel();
             });
 
             matchList.append(card);
@@ -1455,27 +1584,217 @@ function buildPrimaryMatchSection(primary, matches, index, totalPrimaries) {
     return section;
 }
 
-function updateFluorophoreConflictDisplay() {
+function updateConflictDisplay() {
     // Update the conflict highlighting on all secondary cards
     $('.secondary-select').each(function() {
-        const fluor = $(this).data('fluorophore').toLowerCase();
-        const card = $(this).closest('.card');
-        const isChecked = $(this).is(':checked');
+        const $this = $(this);
+        const fluor = $this.data('fluorophore').toLowerCase();
+        const host = $this.data('host').toLowerCase();
+        const target = $this.data('target').toLowerCase();
+        const $card = $this.closest('.card');
+        const isChecked = $this.is(':checked');
 
-        if (fluor && !isChecked) {
-            if (usedFluorophores.has(fluor)) {
-                card.addClass('border-warning');
-                $(this).prop('disabled', true);
-                if (!card.find('.conflict-badge').length) {
-                    card.find('strong').first().after('<span class="badge bg-warning text-dark ms-2 conflict-badge"><i class="bi bi-exclamation-triangle"></i> Fluorophore in use</span>');
-                }
-            } else {
-                card.removeClass('border-warning');
-                $(this).prop('disabled', false);
-                card.find('.conflict-badge').remove();
+        if (isChecked) return; // Skip already selected items
+
+        // Check for fluorophore conflict
+        const hasFluorConflict = fluor && usedFluorophores.has(fluor);
+        // Check for cross-reactivity: host of this secondary is targeted by a selected secondary
+        // OR target of this secondary is the host of a selected secondary
+        const hasCrossReactivity = (host && selectedSecondaryTargets.has(host)) ||
+                                    (target && selectedSecondaryHosts.has(target));
+
+        // Remove old badges
+        $card.find('.conflict-badge, .cross-react-badge').remove();
+
+        if (hasFluorConflict || hasCrossReactivity) {
+            $this.prop('disabled', true);
+
+            if (hasFluorConflict) {
+                $card.addClass('border-warning');
+                $card.find('strong').first().after('<span class="badge bg-warning text-dark ms-2 conflict-badge"><i class="bi bi-exclamation-triangle"></i> Fluorophore in use</span>');
             }
+
+            if (hasCrossReactivity) {
+                $card.addClass('cross-reactivity-conflict');
+                if (!hasFluorConflict) {
+                    $card.find('strong').first().after('<span class="badge bg-danger ms-2 cross-react-badge"><i class="bi bi-x-octagon"></i> Cross-reactivity</span>');
+                }
+            }
+        } else {
+            $card.removeClass('border-warning cross-reactivity-conflict');
+            $this.prop('disabled', false);
         }
     });
+
+    // Update cross-reactivity warning panel
+    updateCrossReactivityWarning();
+}
+
+function updateCrossReactivityWarning() {
+    const warningDiv = $('#crossReactivityWarning');
+    const detailsDiv = $('#crossReactivityDetails');
+
+    if (selectedSecondaryHosts.size === 0 && selectedSecondaryTargets.size === 0) {
+        warningDiv.hide();
+        return;
+    }
+
+    const warnings = [];
+
+    // Build explanation of current constraints
+    if (selectedSecondaryHosts.size > 0) {
+        const hosts = Array.from(selectedSecondaryHosts).map(h => h.charAt(0).toUpperCase() + h.slice(1));
+        warnings.push(`Secondaries targeting <strong>${hosts.join(', ')}</strong> are blocked (host of selected secondary)`);
+    }
+    if (selectedSecondaryTargets.size > 0) {
+        const targets = Array.from(selectedSecondaryTargets).map(t => t.charAt(0).toUpperCase() + t.slice(1));
+        warnings.push(`Secondaries hosted in <strong>${targets.join(', ')}</strong> are blocked (target of selected secondary)`);
+    }
+
+    if (warnings.length > 0) {
+        detailsDiv.html(warnings.map(w => `<div>• ${w}</div>`).join(''));
+        warningDiv.show();
+    } else {
+        warningDiv.hide();
+    }
+}
+
+function updateConsolidatePanel() {
+    const panel = $('#consolidatePanel');
+    const content = $('#consolidateContent');
+
+    if (selectedSecondaries.size === 0) {
+        panel.hide();
+        return;
+    }
+
+    panel.show();
+    content.empty();
+
+    // Group by primary
+    const byPrimary = new Map();
+    selectedSecondaries.forEach((data, key) => {
+        const primKey = data.primaryId;
+        if (!byPrimary.has(primKey)) {
+            byPrimary.set(primKey, {
+                primaryName: data.primaryName,
+                secondaries: []
+            });
+        }
+        byPrimary.get(primKey).secondaries.push(data);
+    });
+
+    // Build panel content
+    byPrimary.forEach((primary, primId) => {
+        const item = $(`
+            <div class="consolidate-item">
+                <div class="d-flex justify-content-between align-items-center">
+                    <strong><i class="bi bi-1-circle text-primary"></i> ${primary.primaryName}</strong>
+                    <span class="badge bg-primary">${primary.secondaries.length} secondary</span>
+                </div>
+                <div class="secondary-list mt-2"></div>
+            </div>
+        `);
+
+        const secList = item.find('.secondary-list');
+        primary.secondaries.forEach(sec => {
+            secList.append(`
+                <div class="secondary-info">
+                    <i class="bi bi-arrow-return-right text-success"></i>
+                    <strong>${sec.secondaryName}</strong>
+                    ${sec.fluorophore ? `<span class="conjugate-badge ms-2">${sec.fluorophore}</span>` : ''}
+                    <br>
+                    <small class="text-muted">Host: ${sec.host} | Target: Anti-${sec.target}</small>
+                </div>
+            `);
+        });
+
+        content.append(item);
+    });
+
+    // Add summary
+    const totalPrimaries = byPrimary.size;
+    const totalSecondaries = selectedSecondaries.size;
+    const allFluorophores = Array.from(usedFluorophores).filter(f => f);
+
+    content.append(`
+        <div class="mt-3 pt-2 border-top">
+            <div class="row text-center">
+                <div class="col">
+                    <strong class="text-primary">${totalPrimaries}</strong><br>
+                    <small>Primaries</small>
+                </div>
+                <div class="col">
+                    <strong class="text-success">${totalSecondaries}</strong><br>
+                    <small>Secondaries</small>
+                </div>
+                <div class="col">
+                    <strong class="text-warning">${allFluorophores.length}</strong><br>
+                    <small>Fluorophores</small>
+                </div>
+            </div>
+            ${allFluorophores.length > 0 ? `
+                <div class="mt-2 text-center">
+                    <small class="text-muted">Panel: ${allFluorophores.map(f => `<span class="conjugate-badge">${f}</span>`).join(' ')}</small>
+                </div>
+            ` : ''}
+        </div>
+    `);
+}
+
+function copyPanelToClipboard() {
+    if (selectedSecondaries.size === 0) {
+        alert('No antibodies selected');
+        return;
+    }
+
+    let text = 'ANTIBODY PANEL\n';
+    text += '='.repeat(50) + '\n\n';
+
+    // Group by primary
+    const byPrimary = new Map();
+    selectedSecondaries.forEach((data, key) => {
+        const primKey = data.primaryId;
+        if (!byPrimary.has(primKey)) {
+            byPrimary.set(primKey, {
+                primaryName: data.primaryName,
+                secondaries: []
+            });
+        }
+        byPrimary.get(primKey).secondaries.push(data);
+    });
+
+    byPrimary.forEach((primary, primId) => {
+        text += `PRIMARY: ${primary.primaryName}\n`;
+        primary.secondaries.forEach(sec => {
+            text += `  └─ SECONDARY: ${sec.secondaryName}`;
+            if (sec.fluorophore) text += ` [${sec.fluorophore}]`;
+            text += `\n`;
+            text += `     Host: ${sec.host} | Target: Anti-${sec.target}\n`;
+        });
+        text += '\n';
+    });
+
+    // Add fluorophore summary
+    const allFluorophores = Array.from(usedFluorophores).filter(f => f);
+    if (allFluorophores.length > 0) {
+        text += 'FLUOROPHORE PANEL: ' + allFluorophores.join(', ') + '\n';
+    }
+
+    navigator.clipboard.writeText(text).then(() => {
+        // Show brief success message
+        const btn = $('[onclick="copyPanelToClipboard()"]');
+        const originalHtml = btn.html();
+        btn.html('<i class="bi bi-check"></i> Copied!');
+        setTimeout(() => btn.html(originalHtml), 2000);
+    }).catch(err => {
+        alert('Failed to copy: ' + err.message);
+    });
+}
+
+// Alias for backwards compatibility
+function updateFluorophoreConflictDisplay() {
+    updateConflictDisplay();
 }
 
 // Old findMatches function removed - replaced by findMultiMatches
