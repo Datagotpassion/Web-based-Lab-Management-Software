@@ -167,9 +167,14 @@
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span><i class="bi bi-list"></i> Primary Antibodies</span>
-                <button class="btn btn-primary btn-sm" onclick="showAddPrimaryModal()">
-                    <i class="bi bi-plus"></i> Add Primary
-                </button>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-danger btn-sm d-none" id="deleteSelectedPrimaryBtn" onclick="deleteSelectedPrimary()">
+                        <i class="bi bi-trash"></i> Delete (<span id="selectedPrimaryDeleteCount">0</span>)
+                    </button>
+                    <button class="btn btn-primary btn-sm" onclick="showAddPrimaryModal()">
+                        <i class="bi bi-plus"></i> Add Primary
+                    </button>
+                </div>
             </div>
             <div class="card-body">
                 <!-- Filters -->
@@ -215,9 +220,14 @@
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span><i class="bi bi-list"></i> Secondary Antibodies</span>
-                <button class="btn btn-success btn-sm" onclick="showAddSecondaryModal()">
-                    <i class="bi bi-plus"></i> Add Secondary
-                </button>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-danger btn-sm d-none" id="deleteSelectedSecondaryBtn" onclick="deleteSelectedSecondary()">
+                        <i class="bi bi-trash"></i> Delete (<span id="selectedSecondaryDeleteCount">0</span>)
+                    </button>
+                    <button class="btn btn-success btn-sm" onclick="showAddSecondaryModal()">
+                        <i class="bi bi-plus"></i> Add Secondary
+                    </button>
+                </div>
             </div>
             <div class="card-body">
                 <!-- Filters -->
@@ -907,6 +917,9 @@ function displayPrimary(antibodies) {
     const container = $('#primaryList');
     container.empty();
 
+    // Reset selection UI
+    updatePrimaryDeleteCount();
+
     if (antibodies.length === 0) {
         container.html('<p class="text-muted text-center py-4">No primary antibodies found</p>');
         return;
@@ -921,20 +934,24 @@ function displayPrimary(antibodies) {
             <div class="card ab-card primary">
                 <div class="card-body py-2">
                     <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <strong>${ab.name}</strong>
-                            ${ab.target_protein ? `<small class="text-muted"> (${ab.target_protein})</small>` : ''}
-                            <br>
-                            <span class="host-badge">${ab.host_species || 'Unknown host'}</span>
-                            ${ab.isotype ? `<span class="isotype-badge">${ab.isotype}</span>` : ''}
-                            ${ab.clonality ? `<span class="badge bg-secondary">${ab.clonality}</span>` : ''}
-                            ${conjugateInfo}
-                            ${ab.validated === 'Yes' ? '<span class="badge bg-success">Validated</span>' : ''}
-                            <br>
-                            <small class="text-muted">
-                                ${ab.supplier || ''} ${ab.catalog_number ? `| Cat# ${ab.catalog_number}` : ''}
-                                ${ab.clone_number ? ` | Clone: ${ab.clone_number}` : ''}
-                            </small>
+                        <div class="d-flex align-items-start">
+                            <input type="checkbox" class="form-check-input me-2 mt-1 primary-delete-checkbox"
+                                data-id="${ab.id}" data-name="${escapedName}" onchange="updatePrimaryDeleteCount()">
+                            <div>
+                                <strong>${ab.name}</strong>
+                                ${ab.target_protein ? `<small class="text-muted"> (${ab.target_protein})</small>` : ''}
+                                <br>
+                                <span class="host-badge">${ab.host_species || 'Unknown host'}</span>
+                                ${ab.isotype ? `<span class="isotype-badge">${ab.isotype}</span>` : ''}
+                                ${ab.clonality ? `<span class="badge bg-secondary">${ab.clonality}</span>` : ''}
+                                ${conjugateInfo}
+                                ${ab.validated === 'Yes' ? '<span class="badge bg-success">Validated</span>' : ''}
+                                <br>
+                                <small class="text-muted">
+                                    ${ab.supplier || ''} ${ab.catalog_number ? `| Cat# ${ab.catalog_number}` : ''}
+                                    ${ab.clone_number ? ` | Clone: ${ab.clone_number}` : ''}
+                                </small>
+                            </div>
                         </div>
                         <div>
                             <button class="btn btn-sm btn-outline-primary" onclick="editPrimary(${ab.id})" title="Edit">
@@ -956,6 +973,9 @@ function displaySecondary(antibodies) {
     const container = $('#secondaryList');
     container.empty();
 
+    // Reset selection UI
+    updateSecondaryDeleteCount();
+
     if (antibodies.length === 0) {
         container.html('<p class="text-muted text-center py-4">No secondary antibodies found</p>');
         return;
@@ -967,20 +987,24 @@ function displaySecondary(antibodies) {
             <div class="card ab-card secondary">
                 <div class="card-body py-2">
                     <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <strong>${ab.name}</strong>
-                            <br>
-                            <span class="target-badge">Anti-${ab.target_species || '?'}</span>
-                            ${ab.target_isotype ? `<span class="isotype-badge">${ab.target_isotype}</span>` : ''}
-                            ${ab.conjugate ? `<span class="conjugate-badge">${ab.conjugate}</span>` : ''}
-                            ${ab.format ? `<span class="badge bg-secondary">${ab.format}</span>` : ''}
-                            ${ab.cross_adsorbed === 'Yes' ? '<span class="badge bg-info">Cross-adsorbed</span>' : ''}
-                            <br>
-                            <small class="text-muted">
-                                Host: ${ab.host_species || '?'}
-                                ${ab.supplier ? ` | ${ab.supplier}` : ''}
-                                ${ab.catalog_number ? ` | Cat# ${ab.catalog_number}` : ''}
-                            </small>
+                        <div class="d-flex align-items-start">
+                            <input type="checkbox" class="form-check-input me-2 mt-1 secondary-delete-checkbox"
+                                data-id="${ab.id}" data-name="${escapedName}" onchange="updateSecondaryDeleteCount()">
+                            <div>
+                                <strong>${ab.name}</strong>
+                                <br>
+                                <span class="target-badge">Anti-${ab.target_species || '?'}</span>
+                                ${ab.target_isotype ? `<span class="isotype-badge">${ab.target_isotype}</span>` : ''}
+                                ${ab.conjugate ? `<span class="conjugate-badge">${ab.conjugate}</span>` : ''}
+                                ${ab.format ? `<span class="badge bg-secondary">${ab.format}</span>` : ''}
+                                ${ab.cross_adsorbed === 'Yes' ? '<span class="badge bg-info">Cross-adsorbed</span>' : ''}
+                                <br>
+                                <small class="text-muted">
+                                    Host: ${ab.host_species || '?'}
+                                    ${ab.supplier ? ` | ${ab.supplier}` : ''}
+                                    ${ab.catalog_number ? ` | Cat# ${ab.catalog_number}` : ''}
+                                </small>
+                            </div>
                         </div>
                         <div>
                             <button class="btn btn-sm btn-outline-success" onclick="editSecondary(${ab.id})" title="Edit">
@@ -1261,6 +1285,152 @@ function showAntibodyDeleteNotification(itemName, type) {
             $(this).remove();
         });
     }, 3000);
+}
+
+// Update primary delete count and show/hide button
+function updatePrimaryDeleteCount() {
+    const count = $('.primary-delete-checkbox:checked').length;
+    $('#selectedPrimaryDeleteCount').text(count);
+    if (count > 0) {
+        $('#deleteSelectedPrimaryBtn').removeClass('d-none');
+    } else {
+        $('#deleteSelectedPrimaryBtn').addClass('d-none');
+    }
+}
+
+// Update secondary delete count and show/hide button
+function updateSecondaryDeleteCount() {
+    const count = $('.secondary-delete-checkbox:checked').length;
+    $('#selectedSecondaryDeleteCount').text(count);
+    if (count > 0) {
+        $('#deleteSelectedSecondaryBtn').removeClass('d-none');
+    } else {
+        $('#deleteSelectedSecondaryBtn').addClass('d-none');
+    }
+}
+
+// Delete selected primary antibodies
+function deleteSelectedPrimary() {
+    const selected = $('.primary-delete-checkbox:checked');
+    const count = selected.length;
+
+    if (count === 0) return;
+
+    // Build list of names for confirmation
+    const names = [];
+    selected.each(function() {
+        names.push($(this).data('name'));
+    });
+
+    const nameList = names.length <= 5
+        ? names.join(', ')
+        : names.slice(0, 5).join(', ') + ` and ${names.length - 5} more`;
+
+    if (!confirm(`Delete ${count} primary antibod${count === 1 ? 'y' : 'ies'}?\n\n${nameList}\n\nThis action cannot be undone.`)) {
+        return;
+    }
+
+    // Collect IDs and delete
+    const ids = [];
+    selected.each(function() {
+        ids.push($(this).data('id'));
+    });
+
+    let completed = 0;
+    let failed = 0;
+
+    ids.forEach(id => {
+        $.ajax({
+            url: `/api/antibodies/primary/${id}`,
+            type: 'DELETE',
+            success: function() {
+                completed++;
+                if (completed === ids.length) {
+                    finishPrimaryBulkDelete(count, failed);
+                }
+            },
+            error: function() {
+                failed++;
+                completed++;
+                if (completed === ids.length) {
+                    finishPrimaryBulkDelete(count, failed);
+                }
+            }
+        });
+    });
+}
+
+// Finish primary bulk delete
+function finishPrimaryBulkDelete(total, failed) {
+    loadPrimaryAntibodies();
+    const success = total - failed;
+    if (failed === 0) {
+        showAntibodyDeleteNotification(`${success} antibod${success === 1 ? 'y' : 'ies'}`, 'primary');
+    } else {
+        alert(`Deleted ${success} antibod${success === 1 ? 'y' : 'ies'}. Failed to delete ${failed}.`);
+    }
+}
+
+// Delete selected secondary antibodies
+function deleteSelectedSecondary() {
+    const selected = $('.secondary-delete-checkbox:checked');
+    const count = selected.length;
+
+    if (count === 0) return;
+
+    // Build list of names for confirmation
+    const names = [];
+    selected.each(function() {
+        names.push($(this).data('name'));
+    });
+
+    const nameList = names.length <= 5
+        ? names.join(', ')
+        : names.slice(0, 5).join(', ') + ` and ${names.length - 5} more`;
+
+    if (!confirm(`Delete ${count} secondary antibod${count === 1 ? 'y' : 'ies'}?\n\n${nameList}\n\nThis action cannot be undone.`)) {
+        return;
+    }
+
+    // Collect IDs and delete
+    const ids = [];
+    selected.each(function() {
+        ids.push($(this).data('id'));
+    });
+
+    let completed = 0;
+    let failed = 0;
+
+    ids.forEach(id => {
+        $.ajax({
+            url: `/api/antibodies/secondary/${id}`,
+            type: 'DELETE',
+            success: function() {
+                completed++;
+                if (completed === ids.length) {
+                    finishSecondaryBulkDelete(count, failed);
+                }
+            },
+            error: function() {
+                failed++;
+                completed++;
+                if (completed === ids.length) {
+                    finishSecondaryBulkDelete(count, failed);
+                }
+            }
+        });
+    });
+}
+
+// Finish secondary bulk delete
+function finishSecondaryBulkDelete(total, failed) {
+    loadSecondaryAntibodies();
+    const success = total - failed;
+    if (failed === 0) {
+        showAntibodyDeleteNotification(`${success} antibod${success === 1 ? 'y' : 'ies'}`, 'secondary');
+    } else {
+        alert(`Deleted ${success} antibod${success === 1 ? 'y' : 'ies'}. Failed to delete ${failed}.`);
+    }
 }
 
 function populateMatchSelect(antibodies) {

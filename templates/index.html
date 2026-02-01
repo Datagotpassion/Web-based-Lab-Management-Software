@@ -12,12 +12,15 @@
             </div>
             <div class="card-body">
                 <!-- Action Buttons -->
-                <div class="mb-3">
+                <div class="mb-3 d-flex gap-2 flex-wrap align-items-center">
                     <button class="btn btn-primary" onclick="showAddRecordModal()">
                         <i class="bi bi-plus-circle"></i> Add New Record
                     </button>
                     <button class="btn btn-success" onclick="refreshRecords()">
                         <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                    <button class="btn btn-danger d-none" id="deleteSelectedBtn" onclick="deleteSelectedRecords()">
+                        <i class="bi bi-trash"></i> Delete Selected (<span id="selectedCount">0</span>)
                     </button>
                 </div>
 
@@ -42,6 +45,9 @@
                     <table class="table table-hover table-striped" id="recordsTable">
                         <thead class="table-dark sticky-top">
                             <tr>
+                                <th style="width: 40px;">
+                                    <input type="checkbox" class="form-check-input" id="selectAllRecords" onchange="toggleSelectAllRecords()" title="Select All">
+                                </th>
                                 <th>ID</th>
                                 <th>Drug Name</th>
                                 <th>Concentration</th>

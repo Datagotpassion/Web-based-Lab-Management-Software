@@ -258,8 +258,12 @@ function displayRecords(records) {
     const tbody = $('#recordsTableBody');
     tbody.empty();
 
+    // Reset select all checkbox
+    $('#selectAllRecords').prop('checked', false);
+    updateSelectedCount();
+
     if (records.length === 0) {
-        tbody.append('<tr><td colspan="7" class="text-center text-muted">No records found</td></tr>');
+        tbody.append('<tr><td colspan="8" class="text-center text-muted">No records found</td></tr>');
         return;
     }
 
@@ -270,6 +274,9 @@ function displayRecords(records) {
         const escapedName = record.drug_name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
         const row = `
             <tr>
+                <td>
+                    <input type="checkbox" class="form-check-input record-checkbox" data-id="${record.id}" data-name="${escapedName}" onchange="updateSelectedCount()">
+                </td>
                 <td>${record.id}</td>
                 <td><strong>${record.drug_name}</strong></td>
                 <td>${record.stock_concentration || '-'} ${record.stock_unit || ''}</td>
@@ -288,6 +295,96 @@ function displayRecords(records) {
         `;
         tbody.append(row);
     });
+}
+
+// Toggle select all records
+function toggleSelectAllRecords() {
+    const isChecked = $('#selectAllRecords').is(':checked');
+    $('.record-checkbox').prop('checked', isChecked);
+    updateSelectedCount();
+}
+
+// Update selected count and show/hide delete button
+function updateSelectedCount() {
+    const count = $('.record-checkbox:checked').length;
+    $('#selectedCount').text(count);
+    if (count > 0) {
+        $('#deleteSelectedBtn').removeClass('d-none');
+    } else {
+        $('#deleteSelectedBtn').addClass('d-none');
+    }
+
+    // Update select all checkbox state
+    const totalCheckboxes = $('.record-checkbox').length;
+    if (totalCheckboxes > 0 && count === totalCheckboxes) {
+        $('#selectAllRecords').prop('checked', true);
+    } else {
+        $('#selectAllRecords').prop('checked', false);
+    }
+}
+
+// Delete selected records
+function deleteSelectedRecords() {
+    const selected = $('.record-checkbox:checked');
+    const count = selected.length;
+
+    if (count === 0) return;
+
+    // Build list of names for confirmation
+    const names = [];
+    selected.each(function() {
+        names.push($(this).data('name'));
+    });
+
+    const nameList = names.length <= 5
+        ? names.join(', ')
+        : names.slice(0, 5).join(', ') + ` and ${names.length - 5} more`;
+
+    if (!confirm(`Delete ${count} item(s)?\n\n${nameList}\n\nThis action cannot be undone.`)) {
+        return;
+    }
+
+    // Collect IDs and delete
+    const ids = [];
+    selected.each(function() {
+        ids.push($(this).data('id'));
+    });
+
+    // Delete records one by one
+    let completed = 0;
+    let failed = 0;
+
+    ids.forEach(id => {
+        fetch(`/api/record/${id}`, { method: 'DELETE' })
+            .then(response => response.json())
+            .then(result => {
+                if (!result.success) failed++;
+                completed++;
+                if (completed === ids.length) {
+                    finishBulkDelete(count, failed);
+                }
+            })
+            .catch(() => {
+                failed++;
+                completed++;
+                if (completed === ids.length) {
+                    finishBulkDelete(count, failed);
+                }
+            });
+    });
+}
+
+// Finish bulk delete operation
+function finishBulkDelete(total, failed) {
+    loadRecords();
+    loadFridgeDisplays();
+
+    const success = total - failed;
+    if (failed === 0) {
+        showDeleteNotification(`${success} item(s)`);
+    } else {
+        alert(`Deleted ${success} item(s). Failed to delete ${failed} item(s).`);
+    }
 }
 
 // Get temperature badge HTML
