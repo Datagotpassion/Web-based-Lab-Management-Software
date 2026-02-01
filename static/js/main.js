@@ -267,6 +267,7 @@ function displayRecords(records) {
         const tempBadge = getTempBadge(record.storage_temp);
         const location = getLocationDisplay(record);
 
+        const escapedName = record.drug_name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
         const row = `
             <tr>
                 <td>${record.id}</td>
@@ -276,10 +277,10 @@ function displayRecords(records) {
                 <td>${location}</td>
                 <td>${record.supplier || '-'}</td>
                 <td>
-                    <button class="btn btn-sm btn-primary" onclick="editRecord(${record.id})">
+                    <button class="btn btn-sm btn-primary" onclick="editRecord(${record.id})" title="Edit">
                         <i class="bi bi-pencil"></i>
                     </button>
-                    <button class="btn btn-sm btn-danger" onclick="deleteRecord(${record.id})">
+                    <button class="btn btn-sm btn-danger" onclick="deleteRecord(${record.id}, '${escapedName}')" title="Delete">
                         <i class="bi bi-trash"></i>
                     </button>
                 </td>
@@ -552,8 +553,9 @@ function saveRecord() {
 }
 
 // Delete record
-function deleteRecord(id) {
-    if (!confirm('Are you sure you want to delete this record?')) {
+function deleteRecord(id, name) {
+    const itemName = name || 'this item';
+    if (!confirm(`Delete "${itemName}"?\n\nThis action cannot be undone.`)) {
         return;
     }
 
@@ -565,7 +567,7 @@ function deleteRecord(id) {
         if (result.success) {
             loadRecords();
             loadFridgeDisplays();
-            alert('Record deleted successfully');
+            showDeleteNotification(itemName);
         } else {
             alert('Error: ' + (result.error || 'Failed to delete record'));
         }
@@ -574,6 +576,36 @@ function deleteRecord(id) {
         console.error('Error deleting record:', error);
         alert('Failed to delete record');
     });
+}
+
+// Show a brief notification after deletion
+function showDeleteNotification(itemName) {
+    // Create notification element
+    const notification = $(`
+        <div class="delete-notification" style="
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #27ae60;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            z-index: 9999;
+            animation: slideIn 0.3s ease;
+        ">
+            <i class="bi bi-check-circle"></i> "${itemName}" deleted successfully
+        </div>
+    `);
+
+    $('body').append(notification);
+
+    // Auto-remove after 3 seconds
+    setTimeout(() => {
+        notification.fadeOut(300, function() {
+            $(this).remove();
+        });
+    }, 3000);
 }
 
 // Refresh records

@@ -916,6 +916,7 @@ function displayPrimary(antibodies) {
         const conjugateInfo = ab.is_conjugated && ab.fluorophore ?
             `<span class="conjugate-badge">${ab.fluorophore}</span>` :
             (ab.is_conjugated ? '<span class="badge bg-info">Conjugated</span>' : '');
+        const escapedName = (ab.name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
         const card = $(`
             <div class="card ab-card primary">
                 <div class="card-body py-2">
@@ -936,10 +937,10 @@ function displayPrimary(antibodies) {
                             </small>
                         </div>
                         <div>
-                            <button class="btn btn-sm btn-outline-primary" onclick="editPrimary(${ab.id})">
+                            <button class="btn btn-sm btn-outline-primary" onclick="editPrimary(${ab.id})" title="Edit">
                                 <i class="bi bi-pencil"></i>
                             </button>
-                            <button class="btn btn-sm btn-outline-danger" onclick="deletePrimary(${ab.id})">
+                            <button class="btn btn-sm btn-outline-danger" onclick="deletePrimary(${ab.id}, '${escapedName}')" title="Delete">
                                 <i class="bi bi-trash"></i>
                             </button>
                         </div>
@@ -961,6 +962,7 @@ function displaySecondary(antibodies) {
     }
 
     antibodies.forEach(ab => {
+        const escapedName = (ab.name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
         const card = $(`
             <div class="card ab-card secondary">
                 <div class="card-body py-2">
@@ -981,10 +983,10 @@ function displaySecondary(antibodies) {
                             </small>
                         </div>
                         <div>
-                            <button class="btn btn-sm btn-outline-success" onclick="editSecondary(${ab.id})">
+                            <button class="btn btn-sm btn-outline-success" onclick="editSecondary(${ab.id})" title="Edit">
                                 <i class="bi bi-pencil"></i>
                             </button>
-                            <button class="btn btn-sm btn-outline-danger" onclick="deleteSecondary(${ab.id})">
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteSecondary(${ab.id}, '${escapedName}')" title="Delete">
                                 <i class="bi bi-trash"></i>
                             </button>
                         </div>
@@ -1119,14 +1121,19 @@ function savePrimary() {
     });
 }
 
-function deletePrimary(id) {
-    if (!confirm('Delete this primary antibody?')) return;
+function deletePrimary(id, name) {
+    const itemName = name || 'this primary antibody';
+    if (!confirm(`Delete "${itemName}"?\n\nThis action cannot be undone.`)) return;
 
     $.ajax({
         url: `/api/antibodies/primary/${id}`,
         type: 'DELETE',
         success: function() {
             loadPrimaryAntibodies();
+            showAntibodyDeleteNotification(itemName, 'primary');
+        },
+        error: function(xhr) {
+            alert('Error deleting: ' + (xhr.responseJSON?.error || 'Unknown error'));
         }
     });
 }
@@ -1209,16 +1216,51 @@ function saveSecondary() {
     });
 }
 
-function deleteSecondary(id) {
-    if (!confirm('Delete this secondary antibody?')) return;
+function deleteSecondary(id, name) {
+    const itemName = name || 'this secondary antibody';
+    if (!confirm(`Delete "${itemName}"?\n\nThis action cannot be undone.`)) return;
 
     $.ajax({
         url: `/api/antibodies/secondary/${id}`,
         type: 'DELETE',
         success: function() {
             loadSecondaryAntibodies();
+            showAntibodyDeleteNotification(itemName, 'secondary');
+        },
+        error: function(xhr) {
+            alert('Error deleting: ' + (xhr.responseJSON?.error || 'Unknown error'));
         }
     });
+}
+
+// Show a brief notification after deletion
+function showAntibodyDeleteNotification(itemName, type) {
+    const bgColor = type === 'primary' ? '#9b59b6' : '#27ae60';
+    const notification = $(`
+        <div class="delete-notification" style="
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: ${bgColor};
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            z-index: 9999;
+            animation: slideIn 0.3s ease;
+        ">
+            <i class="bi bi-check-circle"></i> "${itemName}" deleted
+        </div>
+    `);
+
+    $('body').append(notification);
+
+    // Auto-remove after 3 seconds
+    setTimeout(() => {
+        notification.fadeOut(300, function() {
+            $(this).remove();
+        });
+    }, 3000);
 }
 
 function populateMatchSelect(antibodies) {
