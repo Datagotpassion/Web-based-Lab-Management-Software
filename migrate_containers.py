@@ -36,6 +36,9 @@ import sqlite3
 import sys
 from pathlib import Path
 
+# The container schema lives in storage.py so there is a single definition.
+from storage import DDL
+
 DB = Path(__file__).parent / 'lab_management.db'
 
 # A zone name is a "rack cell" when it is letters/spaces, then a number, then a
@@ -296,45 +299,6 @@ def print_plan(units, roots, mapped, orphaned, warnings):
 
 def _count(node):
     return 1 + sum(_count(c) for c in node.children)
-
-
-DDL = '''
-CREATE TABLE IF NOT EXISTS storage_units (
-    id              INTEGER PRIMARY KEY,
-    name            TEXT NOT NULL,
-    kind            TEXT NOT NULL DEFAULT 'fridge',
-    room            TEXT,
-    default_temp_c  REAL,
-    notes           TEXT,
-    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS storage_containers (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    unit_id     INTEGER NOT NULL,
-    parent_id   INTEGER,
-    kind        TEXT NOT NULL,
-    label       TEXT NOT NULL,
-    temp_c      REAL,
-    owner_lab   TEXT,
-    grid_rows   INTEGER,
-    grid_cols   INTEGER,
-    pos_row     INTEGER DEFAULT 0,
-    pos_col     INTEGER DEFAULT 0,
-    row_span    INTEGER DEFAULT 1,
-    col_span    INTEGER DEFAULT 1,
-    depth_index INTEGER DEFAULT 0,
-    color       TEXT,
-    legacy_zone_id INTEGER,
-    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (unit_id)   REFERENCES storage_units(id)      ON DELETE CASCADE,
-    FOREIGN KEY (parent_id) REFERENCES storage_containers(id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_containers_parent ON storage_containers(parent_id);
-CREATE INDEX IF NOT EXISTS idx_containers_unit   ON storage_containers(unit_id);
-CREATE INDEX IF NOT EXISTS idx_containers_legacy ON storage_containers(legacy_zone_id);
-'''
 
 
 def apply_plan(conn, units, roots, mapped):

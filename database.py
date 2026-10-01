@@ -55,8 +55,9 @@ class Database:
             ('storage_section', 'TEXT'),
             ('storage_row', 'INTEGER'),
             ('storage_column', 'INTEGER'),
-            ('fridge_region_id', 'INTEGER'),  # New: link to visual region
-            ('aliquot_volume', 'TEXT')  # New: aliquot volume (e.g., "50 µL", "1 mL")
+            ('fridge_region_id', 'INTEGER'),  # Legacy: link to schematic zone
+            ('aliquot_volume', 'TEXT'),  # Aliquot volume (e.g., "50 µL", "1 mL")
+            ('container_id', 'INTEGER')  # Location in the storage container tree
         ]
 
         for col_name, col_type in new_columns:
@@ -328,8 +329,8 @@ class Database:
                 supplier, preparation_date, notes, solvents, solubility,
                 light_sensitive, preparation_time, expiration_time, sterility,
                 lot_number, product_number, storage_section, storage_row, storage_column,
-                fridge_region_id, aliquot_volume
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                fridge_region_id, aliquot_volume, container_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             data['drug_name'],
             data['stock_concentration'],
@@ -350,7 +351,10 @@ class Database:
             data.get('storage_row'),
             data.get('storage_column'),
             data.get('fridge_region_id'),
-            data.get('aliquot_volume')
+            data.get('aliquot_volume'),
+            # Location now lives in the storage container tree. fridge_region_id
+            # is kept above only so the legacy tables stay readable.
+            data.get('container_id')
         ))
 
         record_id = cursor.lastrowid
@@ -384,7 +388,8 @@ class Database:
                 storage_row = ?,
                 storage_column = ?,
                 fridge_region_id = ?,
-                aliquot_volume = ?
+                aliquot_volume = ?,
+                container_id = ?
             WHERE id = ?
         ''', (
             data['drug_name'],
@@ -407,6 +412,7 @@ class Database:
             data.get('storage_column'),
             data.get('fridge_region_id'),
             data.get('aliquot_volume'),
+            data.get('container_id'),
             record_id
         ))
 
