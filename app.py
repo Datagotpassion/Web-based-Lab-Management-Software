@@ -613,6 +613,29 @@ def _body():
     return request.get_json(silent=True) or {}
 
 
+def _lan_address():
+    """This machine's address on the lab network.
+
+    Opening a UDP socket toward an off-subnet address makes the kernel pick
+    the outbound interface without sending anything, which beats parsing
+    ifconfig and avoids returning 127.0.0.1 the way hostname lookup often
+    does. The display shows this so nobody has to hunt for the Pi's address
+    after DHCP moves it.
+    """
+    import socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(('8.8.8.8', 53))
+        return sock.getsockname()[0]
+    except OSError:
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except OSError:
+            return None
+    finally:
+        sock.close()
+
+
 @app.route('/api/health', methods=['GET'])
 def api_health():
     """Liveness plus a quick sanity summary.
@@ -626,9 +649,13 @@ def api_health():
         containers = storage.flat_list()
         records = db.get_all_records()
         placed = sum(1 for r in records if r['container_id'] is not None)
+        import socket
         return jsonify({
             'status': 'ok',
             'read_only': READ_ONLY,
+            'hostname': socket.gethostname(),
+            'address': _lan_address(),
+            'port': int(os.environ.get('LABMANAGER_PORT', '5000')),
             'database': os.path.abspath(DB_PATH),
             'database_mtime': datetime.fromtimestamp(
                 os.path.getmtime(DB_PATH)).isoformat(timespec='seconds'),
