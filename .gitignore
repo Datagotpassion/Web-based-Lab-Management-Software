@@ -39,3 +39,6 @@ static/fridge_photos/
 *.jpeg
 *.jpg
 *.png
+
+# Sync state (last successful sync + last known address)
+.sync_state.json
