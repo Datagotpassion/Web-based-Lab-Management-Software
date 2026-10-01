@@ -40,12 +40,20 @@
     /* Miniature of a container's grid, so the physical shape is visible in
        the tree rather than only in the freezer map. A rack that is 4 wide and
        3 tall reads as such at a glance. */
-    .mini-grid { display: inline-grid; gap: 1px; vertical-align: middle;
-                 margin-left: .3rem; }
-    .mini-cell { width: 7px; height: 7px; border-radius: 1px;
-                 background: #e9ecef; border: 1px solid #dee2e6; }
-    .mini-cell.filled { background: #a3cfbb; border-color: #198754; }
-    .mini-cell.has-items { background: #198754; }
+    .mini-wrap { display: inline-flex; align-items: center; gap: 2px;
+                 vertical-align: middle; margin-left: .4rem; }
+    .mini-grid { display: inline-grid; gap: 1px; }
+    .mini-cell { width: 14px; height: 12px; border-radius: 2px;
+                 background: #f1f3f5; border: 1px solid #dee2e6;
+                 font-size: 8px; line-height: 10px; text-align: center;
+                 color: #adb5bd; font-weight: 600; }
+    .mini-cell.filled { background: #d1e7dd; border-color: #198754; color: #0f5132; }
+    .mini-cell.has-items { background: #198754; color: #fff; }
+    /* Which edge the door is on, so left/right on screen matches the freezer. */
+    .mini-door { writing-mode: vertical-rl; font-size: 7px; letter-spacing: .5px;
+                 color: #0d6efd; font-weight: 700; background: #e7f1ff;
+                 border: 1px solid #b6d4fe; border-radius: 2px;
+                 padding: 1px 0; line-height: 1; }
 
     .collapse-toggle { width: 1rem; text-align: center; cursor: pointer;
                        color: #adb5bd; user-select: none; }
@@ -411,13 +419,21 @@ function nodeHtml(ct, unit) {
             for (let c = 0; c < cols; c++) {
                 const k = occupied[`${r},${c}`];
                 const cls = !k ? '' : (k.subtree_item_count ? 'filled has-items' : 'filled');
-                cells += `<span class="mini-cell ${cls}"></span>`;
+                // Numbering runs left to right, then down -- same order as the
+                // freezer map and the rack itself.
+                const n = r * cols + c + 1;
+                const tip = k ? `${k.label}: ${k.subtree_item_count || 0} item(s)`
+                              : `slot ${n}: empty`;
+                cells += `<span class="mini-cell ${cls}" title="${tip}">`
+                       + `${k ? esc(k.label) : n}</span>`;
             }
         }
         chips.push(
-            `<span class="mini-grid" title="${cols} x ${rows} = ${cols * rows} slots, `
-            + `${ct.child_count} used" `
-            + `style="grid-template-columns: repeat(${cols}, 7px)">${cells}</span>`);
+            `<span class="mini-wrap" title="${cols} x ${rows} = ${cols * rows} slots, `
+            + `${ct.child_count} used. Numbered left to right; door on the right.">`
+            + `<span class="mini-grid" style="grid-template-columns: repeat(${cols}, 14px)">`
+            + `${cells}</span>`
+            + `<span class="mini-door">DOOR</span></span>`);
     }
 
     const kids = hasKids && !collapsed
