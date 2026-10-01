@@ -5,7 +5,9 @@ Main application file with routes and API endpoints
 
 from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for
 from database import Database
+from storage import StorageTree, StorageError, KINDS, UNIT_KINDS
 from werkzeug.utils import secure_filename
+import functools
 import io
 import os
 from datetime import datetime
@@ -17,6 +19,9 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 # Initialize database
 db = Database('lab_management.db')
+
+# Storage container tree (units > sections > shelves > racks > boxes > ...)
+storage = StorageTree('lab_management.db')
 
 # Ensure upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -1015,6 +1020,135 @@ def get_fridges_by_temp(temp_type):
     """Get all fridges of a specific temperature type"""
     fridges = db.get_fridges_by_temp_type(temp_type)
     return jsonify([dict(f) for f in fridges])
+
+
+# ========== STORAGE STRUCTURE EDITOR ==========
+#
+# These endpoints sit alongside the legacy fridge/zone routes above rather than
+# replacing them, so the existing pages keep working while the new structure is
+# built up. The legacy routes read fridge_schematic_*; these read the container
+# tree in storage_units / storage_containers.
+
+
+def storage_api(fn):
+    """Turn a StorageError into a 400 with its message, which is user-facing."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except StorageError as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+    return wrapper
+
+
+def _body():
+    return request.get_json(silent=True) or {}
+
+
+@app.route('/storage-editor')
+def storage_editor():
+    """Editor for the physical structure of every storage unit."""
+    return render_template('storage_editor.html',
+                           container_kinds=KINDS, unit_kinds=UNIT_KINDS)
+
+
+@app.route('/api/storage/tree', methods=['GET'])
+@app.route('/api/storage/tree/<int:unit_id>', methods=['GET'])
+@storage_api
+def api_storage_tree(unit_id=None):
+    return jsonify({'units': storage.get_tree(unit_id),
+                    'unplaced': storage.unplaced_items()})
+
+
+@app.route('/api/storage/units', methods=['POST'])
+@storage_api
+def api_create_unit():
+    d = _body()
+    return jsonify({'success': True, 'unit': storage.create_unit(
+        d.get('name'), d.get('kind', 'fridge'), d.get('room'),
+        d.get('default_temp_c'), d.get('notes'))}), 201
+
+
+@app.route('/api/storage/units/<int:unit_id>', methods=['PUT'])
+@storage_api
+def api_update_unit(unit_id):
+    return jsonify({'success': True,
+                    'unit': storage.update_unit(unit_id, **_body())})
+
+
+@app.route('/api/storage/units/<int:unit_id>', methods=['DELETE'])
+@storage_api
+def api_delete_unit(unit_id):
+    return jsonify({'success': True, **storage.delete_unit(unit_id)})
+
+
+@app.route('/api/storage/containers', methods=['POST'])
+@storage_api
+def api_create_container():
+    d = _body()
+    return jsonify({'success': True, 'container': storage.create_container(
+        unit_id=d.get('unit_id'), parent_id=d.get('parent_id'),
+        kind=d.get('kind', 'shelf'), label=d.get('label'),
+        temp_c=d.get('temp_c'), owner_lab=d.get('owner_lab'))}), 201
+
+
+@app.route('/api/storage/containers/bulk', methods=['POST'])
+@storage_api
+def api_bulk_create_containers():
+    d = _body()
+    created = storage.bulk_create_children(
+        parent_id=d.get('parent_id'), kind=d.get('kind', 'rack'),
+        count=int(d.get('count', 0)), scheme=d.get('scheme', 'letters'),
+        prefix=d.get('prefix', ''), start=int(d.get('start', 1)))
+    return jsonify({'success': True, 'created': created,
+                    'count': len(created)}), 201
+
+
+@app.route('/api/storage/containers/<int:container_id>', methods=['PUT'])
+@storage_api
+def api_update_container(container_id):
+    return jsonify({'success': True,
+                    'container': storage.update_container(container_id, **_body())})
+
+
+@app.route('/api/storage/containers/<int:container_id>', methods=['DELETE'])
+@storage_api
+def api_delete_container(container_id):
+    force = request.args.get('force', '').lower() in ('1', 'true', 'yes')
+    return jsonify({'success': True,
+                    **storage.delete_container(container_id, force=force)})
+
+
+@app.route('/api/storage/containers/<int:container_id>/move', methods=['POST'])
+@storage_api
+def api_move_container(container_id):
+    d = _body()
+    return jsonify({'success': True, 'container': storage.move_container(
+        container_id, d.get('parent_id'), d.get('pos_row'), d.get('pos_col'))})
+
+
+@app.route('/api/storage/containers/<int:container_id>/reorder', methods=['POST'])
+@storage_api
+def api_reorder_container(container_id):
+    direction = _body().get('direction', 'up')
+    return jsonify({'success': True,
+                    'container': storage.reorder(container_id, direction)})
+
+
+@app.route('/api/storage/containers/<int:container_id>/items', methods=['GET'])
+@storage_api
+def api_container_items(container_id):
+    deep = request.args.get('deep', '').lower() in ('1', 'true', 'yes')
+    return jsonify({'items': storage.container_items(container_id, deep),
+                    'path': storage.path(container_id)})
+
+
+@app.route('/api/storage/place', methods=['POST'])
+@storage_api
+def api_place_item():
+    d = _body()
+    storage.place_item(d.get('table'), d.get('item_id'), d.get('container_id'))
+    return jsonify({'success': True})
 
 
 if __name__ == '__main__':

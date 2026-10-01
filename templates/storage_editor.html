@@ -1,0 +1,729 @@
+{% extends "base.html" %}
+
+{% block title %}Storage Structure Editor{% endblock %}
+
+{% block extra_css %}
+<style>
+    .unit-card { border-left: 4px solid #0d6efd; }
+    .unit-card.selected { background: #f0f7ff; }
+    .unit-card:hover { background: #f8f9fa; cursor: pointer; }
+
+    /* The tree. Indentation carries the hierarchy, with a guide line so deep
+       nesting stays readable. */
+    .tree { font-size: .92rem; }
+    .node { border-radius: .35rem; padding: .3rem .5rem; display: flex;
+            align-items: center; gap: .5rem; min-height: 2.3rem; }
+    .node:hover { background: #f1f3f5; }
+    .node.drop-target { outline: 2px dashed #0d6efd; background: #e7f1ff; }
+    .node-children { margin-left: 1.25rem; padding-left: .75rem;
+                     border-left: 1px solid #dee2e6; }
+    .node-label { font-weight: 500; }
+    .node-label.editing { outline: 2px solid #0d6efd; border-radius: .2rem;
+                          padding: 0 .25rem; background: #fff; }
+    .node-actions { margin-left: auto; display: flex; gap: .15rem;
+                    opacity: 0; transition: opacity .12s; }
+    .node:hover .node-actions { opacity: 1; }
+    .node-actions .btn { --bs-btn-padding-y: .1rem; --bs-btn-padding-x: .35rem;
+                         --bs-btn-font-size: .75rem; }
+
+    .kind-badge { font-size: .68rem; text-transform: uppercase;
+                  letter-spacing: .04em; }
+    .meta-chip { font-size: .72rem; color: #6c757d; }
+    .count-chip { font-size: .72rem; }
+
+    .kind-section { color: #495057; }
+    .kind-shelf   { color: #0d6efd; }
+    .kind-rack    { color: #6f42c1; }
+    .kind-box     { color: #198754; }
+    .kind-drawer, .kind-bin, .kind-tray { color: #fd7e14; }
+
+    .collapse-toggle { width: 1rem; text-align: center; cursor: pointer;
+                       color: #adb5bd; user-select: none; }
+    .collapse-toggle:hover { color: #495057; }
+    .orphan-warning { border-left: 3px solid #dc3545; }
+    .empty-hint { color: #adb5bd; font-style: italic; font-size: .85rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="mb-0">Storage Structure</h4>
+        <small class="text-muted">
+            Build each unit to match the real thing. Shelves can hold different
+            numbers of racks, a unit can have no door or several, and nothing has
+            to be a uniform grid.
+        </small>
+    </div>
+    <button class="btn btn-primary" id="btnAddUnit">
+        <i class="bi bi-plus-lg"></i> Add Unit
+    </button>
+</div>
+
+<div class="row g-3">
+    <!-- Units -->
+    <div class="col-lg-3">
+        <div class="card">
+            <div class="card-header py-2 fw-semibold">Units</div>
+            <div class="list-group list-group-flush" id="unitList"></div>
+        </div>
+
+        <div class="card mt-3" id="unplacedCard" style="display:none">
+            <div class="card-header py-2 fw-semibold text-warning-emphasis">
+                <i class="bi bi-exclamation-triangle"></i>
+                Unplaced items <span class="badge bg-warning text-dark"
+                                     id="unplacedCount">0</span>
+            </div>
+            <div class="card-body py-2" style="max-height:240px;overflow-y:auto">
+                <div class="small text-muted mb-2">
+                    These have no location. Drag a container onto nothing, or
+                    delete a unit, and items land here rather than vanishing.
+                </div>
+                <ul class="list-unstyled mb-0 small" id="unplacedList"></ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tree -->
+    <div class="col-lg-9">
+        <div class="card">
+            <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                <span class="fw-semibold" id="treeHeader">Select a unit</span>
+                <div class="btn-group btn-group-sm" id="treeTools" style="display:none">
+                    <button class="btn btn-outline-secondary" id="btnAddSection">
+                        <i class="bi bi-plus"></i> Section
+                    </button>
+                    <button class="btn btn-outline-secondary" id="btnExpandAll">
+                        <i class="bi bi-arrows-expand"></i> Expand
+                    </button>
+                    <button class="btn btn-outline-secondary" id="btnCollapseAll">
+                        <i class="bi bi-arrows-collapse"></i> Collapse
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="tree" id="tree">
+                    <div class="empty-hint">No unit selected.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Unit editor -->
+<div class="modal fade" id="unitModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title" id="unitModalTitle">Add Unit</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="unitId">
+        <div class="mb-2">
+            <label class="form-label small">Name</label>
+            <input class="form-control form-control-sm" id="unitName"
+                   placeholder="-80 °C Freezer">
+        </div>
+        <div class="row g-2">
+            <div class="col-6 mb-2">
+                <label class="form-label small">Kind</label>
+                <select class="form-select form-select-sm" id="unitKind">
+                    {% for k in unit_kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-6 mb-2">
+                <label class="form-label small">Default temp (°C)</label>
+                <input class="form-control form-control-sm" id="unitTemp"
+                       placeholder="-80">
+                <div class="form-text" style="font-size:.72rem">
+                    Leave blank for a combo unit; set temperatures per section instead.
+                </div>
+            </div>
+        </div>
+        <div class="mb-2">
+            <label class="form-label small">Room</label>
+            <input class="form-control form-control-sm" id="unitRoom"
+                   placeholder="Main Lab">
+        </div>
+        <div class="mb-0">
+            <label class="form-label small">Notes</label>
+            <textarea class="form-control form-control-sm" id="unitNotes" rows="2"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-primary" id="btnSaveUnit">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add children (single or bulk) -->
+<div class="modal fade" id="addChildModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title">Add inside <span id="addChildParent" class="text-primary"></span></h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="addChildParentId">
+        <div class="row g-2">
+            <div class="col-6 mb-2">
+                <label class="form-label small">Kind</label>
+                <select class="form-select form-select-sm" id="addChildKind">
+                    {% for k in container_kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-6 mb-2">
+                <label class="form-label small">How many</label>
+                <input type="number" class="form-control form-control-sm"
+                       id="addChildCount" value="1" min="1" max="100">
+            </div>
+        </div>
+        <div class="row g-2" id="bulkOptions" style="display:none">
+            <div class="col-6 mb-2">
+                <label class="form-label small">Label as</label>
+                <select class="form-select form-select-sm" id="addChildScheme">
+                    <option value="letters">A, B, C …</option>
+                    <option value="numbers">1, 2, 3 …</option>
+                </select>
+            </div>
+            <div class="col-6 mb-2">
+                <label class="form-label small">Prefix</label>
+                <input class="form-control form-control-sm" id="addChildPrefix"
+                       placeholder="e.g. Box ">
+            </div>
+        </div>
+        <div class="mb-2" id="singleLabelWrap">
+            <label class="form-label small">Label</label>
+            <input class="form-control form-control-sm" id="addChildLabel"
+                   placeholder="Shelf 1">
+        </div>
+        <div class="alert alert-light border py-2 mb-0 small" id="addChildPreview"></div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-primary" id="btnSaveChild">Add</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Container properties -->
+<div class="modal fade" id="containerModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title">Container properties</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="ctId">
+        <div class="mb-2">
+            <label class="form-label small">Label</label>
+            <input class="form-control form-control-sm" id="ctLabel">
+        </div>
+        <div class="row g-2">
+            <div class="col-6 mb-2">
+                <label class="form-label small">Kind</label>
+                <select class="form-select form-select-sm" id="ctKind">
+                    {% for k in container_kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-6 mb-2">
+                <label class="form-label small">Temp override (°C)</label>
+                <input class="form-control form-control-sm" id="ctTemp">
+                <div class="form-text" style="font-size:.72rem">
+                    Blank inherits the unit's temperature.
+                </div>
+            </div>
+        </div>
+        <div class="mb-0">
+            <label class="form-label small">Owning lab</label>
+            <input class="form-control form-control-sm" id="ctLab"
+                   placeholder="e.g. Costa Lab">
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-primary" id="btnSaveContainer">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let TREE = [];            // units with nested containers
+let SELECTED_UNIT = null;
+const COLLAPSED = new Set();   // container ids collapsed in the view
+let DRAG_ID = null;
+
+const KIND_ICON = {
+    section: 'bi-layout-sidebar', shelf: 'bi-list', rack: 'bi-grid-3x3',
+    drawer: 'bi-inbox', bin: 'bi-basket', box: 'bi-box',
+    tray: 'bi-grid', other: 'bi-dash-square'
+};
+
+function api(url, opts = {}) {
+    return fetch(url, {
+        headers: {'Content-Type': 'application/json'},
+        ...opts
+    }).then(async r => {
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.error || `Request failed (${r.status})`);
+        return data;
+    });
+}
+
+function toast(msg, kind = 'success') {
+    // Matches the corner/shape of main.js showDeleteNotification, but general
+    // purpose and self-contained so it does not depend on that function.
+    const colour = kind === 'danger' ? '#c0392b' : '#27ae60';
+    const icon = kind === 'danger' ? 'bi-exclamation-triangle' : 'bi-check-circle';
+    const $n = $('<div>').css({
+        position: 'fixed', top: '20px', right: '20px', background: colour,
+        color: '#fff', padding: '12px 20px', borderRadius: '8px',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.2)', zIndex: 9999, maxWidth: '420px'
+    }).html(`<i class="bi ${icon}"></i> ${esc(msg)}`).hide();
+    $('body').append($n);
+    $n.fadeIn(150);
+    // Errors are worth reading, so they linger.
+    setTimeout(() => $n.fadeOut(300, () => $n.remove()),
+               kind === 'danger' ? 6000 : 3000);
+}
+
+function load(keepUnit = true) {
+    return api('/api/storage/tree').then(data => {
+        TREE = data.units;
+        if (!keepUnit || !TREE.some(u => u.id === SELECTED_UNIT)) {
+            SELECTED_UNIT = TREE.length ? TREE[0].id : null;
+        }
+        renderUnits();
+        renderTree();
+        renderUnplaced(data.unplaced);
+    }).catch(e => toast(e.message, 'danger'));
+}
+
+function renderUnits() {
+    const host = $('#unitList').empty();
+    if (!TREE.length) {
+        host.append('<div class="list-group-item empty-hint">No units yet.</div>');
+        return;
+    }
+    TREE.forEach(u => {
+        const temp = u.default_temp_c === null ? 'mixed' : `${fmt(u.default_temp_c)} °C`;
+        host.append(`
+            <div class="list-group-item unit-card ${u.id === SELECTED_UNIT ? 'selected' : ''}"
+                 data-unit="${u.id}">
+              <div class="d-flex justify-content-between align-items-start">
+                <div class="flex-grow-1">
+                  <div class="fw-semibold">${esc(u.name)}</div>
+                  <div class="meta-chip">
+                    ${esc(u.kind)} &middot; ${temp}
+                    ${u.room ? '&middot; ' + esc(u.room) : ''}
+                  </div>
+                  <div class="meta-chip">
+                    ${u.container_count} container${u.container_count === 1 ? '' : 's'},
+                    ${u.item_count} item${u.item_count === 1 ? '' : 's'}
+                  </div>
+                </div>
+                <div class="btn-group btn-group-sm ms-1">
+                  <button class="btn btn-outline-secondary btn-edit-unit"
+                          data-unit="${u.id}" title="Edit">
+                    <i class="bi bi-pencil"></i></button>
+                  <button class="btn btn-outline-danger btn-del-unit"
+                          data-unit="${u.id}" title="Delete">
+                    <i class="bi bi-trash"></i></button>
+                </div>
+              </div>
+            </div>`);
+    });
+}
+
+function renderTree() {
+    const host = $('#tree').empty();
+    const unit = TREE.find(u => u.id === SELECTED_UNIT);
+    if (!unit) {
+        host.append('<div class="empty-hint">No unit selected.</div>');
+        $('#treeHeader').text('Select a unit');
+        $('#treeTools').hide();
+        return;
+    }
+    $('#treeHeader').text(unit.name);
+    $('#treeTools').show();
+
+    if (!unit.containers.length) {
+        host.append(`<div class="empty-hint">
+            Nothing in here yet. Add a section (Body, Door, …) to start.
+        </div>`);
+        return;
+    }
+    unit.containers.forEach(ct => host.append(nodeHtml(ct, unit)));
+}
+
+function nodeHtml(ct, unit) {
+    const collapsed = COLLAPSED.has(ct.id);
+    const hasKids = ct.child_count > 0;
+    const effTemp = ct.temp_c !== null ? ct.temp_c : unit.default_temp_c;
+
+    const chips = [];
+    if (ct.temp_c !== null)
+        chips.push(`<span class="meta-chip"><i class="bi bi-thermometer-half"></i>
+                    ${fmt(ct.temp_c)} °C</span>`);
+    else if (effTemp !== null && ct.kind === 'section')
+        chips.push(`<span class="meta-chip text-body-tertiary">${fmt(effTemp)} °C</span>`);
+    if (ct.owner_lab)
+        chips.push(`<span class="meta-chip"><i class="bi bi-person"></i> ${esc(ct.owner_lab)}</span>`);
+    if (ct.item_count)
+        chips.push(`<span class="badge bg-success-subtle text-success-emphasis count-chip">
+                    ${ct.item_count} here</span>`);
+    if (ct.subtree_item_count > ct.item_count)
+        chips.push(`<span class="badge bg-secondary-subtle text-secondary-emphasis count-chip">
+                    ${ct.subtree_item_count} total</span>`);
+    if (hasKids)
+        chips.push(`<span class="meta-chip">${ct.child_count} inside</span>`);
+
+    const kids = hasKids && !collapsed
+        ? `<div class="node-children">${ct.children.map(k => nodeHtml(k, unit)).join('')}</div>`
+        : '';
+
+    return `
+    <div data-ct="${ct.id}">
+      <div class="node ${ct.orphaned ? 'orphan-warning' : ''}"
+           draggable="true" data-ct="${ct.id}">
+        <span class="collapse-toggle" data-toggle="${ct.id}">
+            ${hasKids ? (collapsed ? '<i class="bi bi-caret-right-fill"></i>'
+                                   : '<i class="bi bi-caret-down-fill"></i>') : ''}
+        </span>
+        <i class="bi ${KIND_ICON[ct.kind] || 'bi-dash-square'} kind-${ct.kind}"></i>
+        <span class="node-label" data-label="${ct.id}">${esc(ct.label)}</span>
+        <span class="badge bg-light text-secondary kind-badge">${esc(ct.kind)}</span>
+        ${chips.join(' ')}
+        ${ct.orphaned ? '<span class="badge bg-danger">orphaned</span>' : ''}
+        <span class="node-actions">
+          <button class="btn btn-outline-primary btn-add-child" data-ct="${ct.id}"
+                  title="Add inside"><i class="bi bi-plus-lg"></i></button>
+          <button class="btn btn-outline-secondary btn-up" data-ct="${ct.id}"
+                  title="Move up"><i class="bi bi-arrow-up"></i></button>
+          <button class="btn btn-outline-secondary btn-down" data-ct="${ct.id}"
+                  title="Move down"><i class="bi bi-arrow-down"></i></button>
+          <button class="btn btn-outline-secondary btn-props" data-ct="${ct.id}"
+                  title="Properties"><i class="bi bi-sliders"></i></button>
+          <button class="btn btn-outline-danger btn-del-ct" data-ct="${ct.id}"
+                  title="Delete"><i class="bi bi-trash"></i></button>
+        </span>
+      </div>
+      ${kids}
+    </div>`;
+}
+
+function renderUnplaced(items) {
+    if (!items || !items.length) { $('#unplacedCard').hide(); return; }
+    $('#unplacedCard').show();
+    $('#unplacedCount').text(items.length);
+    $('#unplacedList').html(items.map(i =>
+        `<li><i class="bi bi-dot"></i> ${esc(i.name)}
+         <span class="text-muted" style="font-size:.7rem">${i.table.replace('_', ' ')}</span></li>`
+    ).join(''));
+}
+
+function findContainer(id, nodes) {
+    nodes = nodes || TREE.flatMap(u => u.containers);
+    for (const n of nodes) {
+        if (n.id === id) return n;
+        const hit = findContainer(id, n.children || []);
+        if (hit) return hit;
+    }
+    return null;
+}
+
+const esc = s => $('<div>').text(s == null ? '' : s).html();
+const fmt = n => (n === null || n === undefined) ? '' : (+n).toString();
+
+// ------------------------------------------------------------------ units
+
+$('#btnAddUnit').on('click', () => {
+    $('#unitModalTitle').text('Add Unit');
+    $('#unitId').val('');
+    $('#unitName,#unitTemp,#unitRoom,#unitNotes').val('');
+    $('#unitKind').val('fridge');
+    new bootstrap.Modal('#unitModal').show();
+});
+
+$(document).on('click', '.btn-edit-unit', function (e) {
+    e.stopPropagation();
+    const u = TREE.find(x => x.id === +$(this).data('unit'));
+    $('#unitModalTitle').text('Edit Unit');
+    $('#unitId').val(u.id);
+    $('#unitName').val(u.name);
+    $('#unitKind').val(u.kind);
+    $('#unitTemp').val(u.default_temp_c === null ? '' : u.default_temp_c);
+    $('#unitRoom').val(u.room || '');
+    $('#unitNotes').val(u.notes || '');
+    new bootstrap.Modal('#unitModal').show();
+});
+
+$('#btnSaveUnit').on('click', function () {
+    const id = $('#unitId').val();
+    const payload = {
+        name: $('#unitName').val(),
+        kind: $('#unitKind').val(),
+        default_temp_c: $('#unitTemp').val(),
+        room: $('#unitRoom').val(),
+        notes: $('#unitNotes').val()
+    };
+    const req = id
+        ? api(`/api/storage/units/${id}`, {method: 'PUT', body: JSON.stringify(payload)})
+        : api('/api/storage/units', {method: 'POST', body: JSON.stringify(payload)});
+    req.then(res => {
+        bootstrap.Modal.getInstance($('#unitModal')[0]).hide();
+        if (!id) SELECTED_UNIT = res.unit.id;
+        toast(id ? 'Unit updated' : 'Unit added');
+        load();
+    }).catch(e => toast(e.message, 'danger'));
+});
+
+$(document).on('click', '.btn-del-unit', function (e) {
+    e.stopPropagation();
+    const u = TREE.find(x => x.id === +$(this).data('unit'));
+    let msg = `Delete "${u.name}" and its ${u.container_count} container(s)?`;
+    if (u.item_count)
+        msg += `\n\n${u.item_count} item(s) inside will lose their location `
+             + `(they will show up under "Unplaced items", not be deleted).`;
+    if (!confirm(msg)) return;
+    api(`/api/storage/units/${u.id}`, {method: 'DELETE'})
+        .then(r => {
+            toast(`Removed ${r.removed_containers} container(s); `
+                + `${r.unplaced_items} item(s) now unplaced`);
+            load(false);
+        }).catch(e => toast(e.message, 'danger'));
+});
+
+$(document).on('click', '.unit-card', function () {
+    SELECTED_UNIT = +$(this).data('unit');
+    renderUnits();
+    renderTree();
+});
+
+// ------------------------------------------------------------- containers
+
+$('#btnAddSection').on('click', () => openAddChild(null));
+
+$(document).on('click', '.btn-add-child', function (e) {
+    e.stopPropagation();
+    openAddChild(+$(this).data('ct'));
+});
+
+function openAddChild(parentId) {
+    const parent = parentId ? findContainer(parentId) : null;
+    const unit = TREE.find(u => u.id === SELECTED_UNIT);
+    $('#addChildParentId').val(parentId || '');
+    $('#addChildParent').text(parent ? parent.label : unit.name);
+
+    // Guess at what you are most likely adding next, given what this is.
+    const guess = {section: 'shelf', shelf: 'rack', rack: 'box', drawer: 'box',
+                   bin: 'box', box: 'tray'};
+    $('#addChildKind').val(parent ? (guess[parent.kind] || 'box') : 'section');
+    $('#addChildCount').val(1);
+    $('#addChildLabel').val('');
+    $('#addChildPrefix').val('');
+    $('#addChildScheme').val('letters');
+    syncAddChildForm();
+    new bootstrap.Modal('#addChildModal').show();
+}
+
+function syncAddChildForm() {
+    const count = +$('#addChildCount').val() || 1;
+    const kind = $('#addChildKind').val();
+    const bulk = count > 1;
+    $('#bulkOptions').toggle(bulk);
+    $('#singleLabelWrap').toggle(!bulk);
+
+    // Sensible default labelling per kind: racks are lettered, boxes numbered.
+    if (bulk && !$('#addChildPrefix').data('touched')) {
+        if (kind === 'rack') { $('#addChildScheme').val('letters'); $('#addChildPrefix').val(''); }
+        else if (kind === 'box') { $('#addChildScheme').val('numbers'); $('#addChildPrefix').val('Box '); }
+        else if (kind === 'shelf') { $('#addChildScheme').val('numbers'); $('#addChildPrefix').val('Shelf '); }
+    }
+
+    let preview;
+    if (bulk) {
+        const scheme = $('#addChildScheme').val();
+        const prefix = $('#addChildPrefix').val();
+        const labels = [];
+        for (let i = 0; i < Math.min(count, 4); i++)
+            labels.push(prefix + (scheme === 'numbers' ? (i + 1) : String.fromCharCode(65 + i)));
+        preview = `Will add <strong>${count}</strong> ${kind}(s): `
+                + labels.join(', ') + (count > 4 ? ', …' : '');
+        preview += kind === 'rack'
+            ? ' &mdash; laid out across the shelf.'
+            : ' &mdash; stacked downwards.';
+    } else {
+        preview = `Will add one ${kind}.`;
+    }
+    $('#addChildPreview').html(preview);
+}
+
+$('#addChildCount,#addChildKind,#addChildScheme').on('input change', syncAddChildForm);
+$('#addChildPrefix').on('input', function () {
+    $(this).data('touched', true);
+    syncAddChildForm();
+});
+
+$('#btnSaveChild').on('click', function () {
+    const parentId = $('#addChildParentId').val();
+    const count = +$('#addChildCount').val() || 1;
+    const kind = $('#addChildKind').val();
+
+    let req;
+    if (count > 1) {
+        if (!parentId) { toast('Pick a container to add them inside', 'danger'); return; }
+        req = api('/api/storage/containers/bulk', {
+            method: 'POST',
+            body: JSON.stringify({parent_id: +parentId, kind, count,
+                                  scheme: $('#addChildScheme').val(),
+                                  prefix: $('#addChildPrefix').val()})
+        }).then(r => toast(`Added ${r.count} ${kind}(s)`));
+    } else {
+        req = api('/api/storage/containers', {
+            method: 'POST',
+            body: JSON.stringify({unit_id: SELECTED_UNIT,
+                                  parent_id: parentId ? +parentId : null,
+                                  kind, label: $('#addChildLabel').val()})
+        }).then(() => toast(`${kind} added`));
+    }
+    req.then(() => {
+        bootstrap.Modal.getInstance($('#addChildModal')[0]).hide();
+        load();
+    }).catch(e => toast(e.message, 'danger'));
+});
+
+$(document).on('click', '.btn-props', function (e) {
+    e.stopPropagation();
+    const ct = findContainer(+$(this).data('ct'));
+    $('#ctId').val(ct.id);
+    $('#ctLabel').val(ct.label);
+    $('#ctKind').val(ct.kind);
+    $('#ctTemp').val(ct.temp_c === null ? '' : ct.temp_c);
+    $('#ctLab').val(ct.owner_lab || '');
+    new bootstrap.Modal('#containerModal').show();
+});
+
+$('#btnSaveContainer').on('click', function () {
+    const id = $('#ctId').val();
+    api(`/api/storage/containers/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({label: $('#ctLabel').val(), kind: $('#ctKind').val(),
+                              temp_c: $('#ctTemp').val(), owner_lab: $('#ctLab').val()})
+    }).then(() => {
+        bootstrap.Modal.getInstance($('#containerModal')[0]).hide();
+        toast('Saved');
+        load();
+    }).catch(e => toast(e.message, 'danger'));
+});
+
+// Rename in place: double-click the label.
+$(document).on('dblclick', '.node-label', function () {
+    const $el = $(this), id = +$el.data('label'), original = $el.text();
+    $el.addClass('editing').attr('contenteditable', 'true').focus();
+    document.execCommand('selectAll', false, null);
+
+    const finish = (save) => {
+        $el.removeClass('editing').attr('contenteditable', 'false').off('blur keydown');
+        const value = $el.text().trim();
+        if (!save || !value || value === original) { $el.text(original); return; }
+        api(`/api/storage/containers/${id}`, {
+            method: 'PUT', body: JSON.stringify({label: value})
+        }).then(() => load()).catch(e => { toast(e.message, 'danger'); $el.text(original); });
+    };
+    $el.on('blur', () => finish(true));
+    $el.on('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+        if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    });
+});
+
+$(document).on('click', '.btn-up, .btn-down', function (e) {
+    e.stopPropagation();
+    const id = +$(this).data('ct');
+    const direction = $(this).hasClass('btn-up') ? 'up' : 'down';
+    api(`/api/storage/containers/${id}/reorder`, {
+        method: 'POST', body: JSON.stringify({direction})
+    }).then(() => load()).catch(e => toast(e.message, 'danger'));
+});
+
+$(document).on('click', '.btn-del-ct', function (e) {
+    e.stopPropagation();
+    const ct = findContainer(+$(this).data('ct'));
+    const deep = ct.subtree_item_count;
+    let msg = `Delete "${ct.label}"`;
+    if (ct.child_count) msg += ` and everything inside it`;
+    msg += '?';
+    if (deep) msg += `\n\n${deep} item(s) will move up to the parent container, `
+                  + `not be deleted.`;
+    if (!confirm(msg)) return;
+    api(`/api/storage/containers/${ct.id}?force=1`, {method: 'DELETE'})
+        .then(r => {
+            toast(`Removed ${r.removed_containers} container(s)`
+                + (r.moved_items ? `; moved ${r.moved_items} item(s) up` : ''));
+            load();
+        }).catch(e => toast(e.message, 'danger'));
+});
+
+$(document).on('click', '.collapse-toggle', function (e) {
+    e.stopPropagation();
+    const id = +$(this).data('toggle');
+    if (!id) return;
+    COLLAPSED.has(id) ? COLLAPSED.delete(id) : COLLAPSED.add(id);
+    renderTree();
+});
+
+$('#btnCollapseAll').on('click', () => {
+    const walk = n => { if (n.child_count) COLLAPSED.add(n.id); (n.children || []).forEach(walk); };
+    (TREE.find(u => u.id === SELECTED_UNIT)?.containers || []).forEach(walk);
+    renderTree();
+});
+$('#btnExpandAll').on('click', () => { COLLAPSED.clear(); renderTree(); });
+
+// ---------------------------------------------- drag to reparent
+
+$(document).on('dragstart', '.node', function (e) {
+    DRAG_ID = +$(this).data('ct');
+    e.originalEvent.dataTransfer.effectAllowed = 'move';
+    // Firefox refuses to start a drag without data set.
+    e.originalEvent.dataTransfer.setData('text/plain', String(DRAG_ID));
+});
+
+$(document).on('dragover', '.node', function (e) {
+    const target = +$(this).data('ct');
+    if (!DRAG_ID || target === DRAG_ID) return;
+    e.preventDefault();
+    $(this).addClass('drop-target');
+});
+
+$(document).on('dragleave drop', '.node', function () {
+    $(this).removeClass('drop-target');
+});
+
+$(document).on('drop', '.node', function (e) {
+    e.preventDefault();
+    const target = +$(this).data('ct');
+    if (!DRAG_ID || target === DRAG_ID) return;
+    const moving = findContainer(DRAG_ID), into = findContainer(target);
+    DRAG_ID = null;
+    if (!confirm(`Move "${moving.label}" into "${into.label}"?`)) return;
+    api(`/api/storage/containers/${moving.id}/move`, {
+        method: 'POST', body: JSON.stringify({parent_id: into.id})
+    }).then(() => { toast(`Moved into ${into.label}`); load(); })
+      .catch(e => toast(e.message, 'danger'));   // e.g. cycle refusal
+});
+
+$(document).on('dragend', '.node', () => { DRAG_ID = null; $('.node').removeClass('drop-target'); });
+
+$(load);
+</script>
+{% endblock %}
