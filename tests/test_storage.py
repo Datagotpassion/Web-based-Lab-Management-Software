@@ -427,3 +427,59 @@ def _blank_drug():
         'preparation_date', 'notes', 'solvents', 'solubility',
         'light_sensitive', 'preparation_time', 'expiration_time', 'sterility',
         'lot_number', 'product_number')}
+
+
+# ------------------------------------------------------------ grid positions
+
+class TestGridPositions:
+    """A rack that declares a 4x3 matrix should fill its slots in reading
+    order, so a box's position reflects where it physically sits."""
+
+    def make_rack(self, tree, cols=4, rows=3):
+        unit = tree.create_unit('-80', kind='ultralow', default_temp_c=-80)
+        sec = tree.create_container(unit['id'], None, 'section', 'Body')
+        shelf = tree.create_container(unit['id'], sec['id'], 'shelf', 'Shelf 2')
+        return tree.create_container(unit['id'], shelf['id'], 'rack', 'C',
+                                     grid_cols=cols, grid_rows=rows)
+
+    def test_fills_across_then_down(self, tree):
+        rack = self.make_rack(tree)
+        boxes = tree.bulk_create_children(rack['id'], 'box', 12, scheme='numbers')
+        layout = {(b['pos_row'], b['pos_col']): b['label'] for b in boxes}
+        assert layout[(0, 0)] == '1' and layout[(0, 3)] == '4'
+        assert layout[(1, 0)] == '5' and layout[(2, 3)] == '12'
+
+    def test_refuses_to_overfill_a_declared_grid(self, tree):
+        rack = self.make_rack(tree)
+        tree.bulk_create_children(rack['id'], 'box', 12, scheme='numbers')
+        with pytest.raises(StorageError, match='full'):
+            tree.bulk_create_children(rack['id'], 'box', 1, scheme='numbers')
+
+    def test_fills_gaps_left_by_a_deletion(self, tree):
+        rack = self.make_rack(tree)
+        boxes = tree.bulk_create_children(rack['id'], 'box', 12, scheme='numbers')
+        # Remove the one at row 1, col 2; the next box should land there.
+        gap = next(b for b in boxes if (b['pos_row'], b['pos_col']) == (1, 2))
+        tree.delete_container(gap['id'])
+        [new] = tree.bulk_create_children(rack['id'], 'box', 1, scheme='numbers')
+        assert (new['pos_row'], new['pos_col']) == (1, 2)
+
+    def test_racks_can_declare_different_shapes(self, tree):
+        wide = self.make_rack(tree, cols=5, rows=2)
+        boxes = tree.bulk_create_children(wide['id'], 'box', 10, scheme='numbers')
+        assert max(b['pos_col'] for b in boxes) == 4
+        assert max(b['pos_row'] for b in boxes) == 1
+
+    def test_no_declared_grid_still_extends_along_one_axis(self, tree):
+        unit = tree.create_unit('Plain fridge')
+        shelf = tree.create_container(unit['id'], None, 'shelf', 'Shelf 1')
+        boxes = tree.bulk_create_children(shelf['id'], 'box', 4, scheme='numbers')
+        assert [b['pos_row'] for b in boxes] == [0, 1, 2, 3]
+
+    def test_grid_dimensions_are_validated(self, tree):
+        rack = self.make_rack(tree)
+        with pytest.raises(StorageError, match='between 1 and 50'):
+            tree.update_container(rack['id'], grid_cols=99)
+        # Blank clears the declared shape rather than claiming a zero grid.
+        cleared = tree.update_container(rack['id'], grid_cols='')
+        assert cleared['grid_cols'] is None

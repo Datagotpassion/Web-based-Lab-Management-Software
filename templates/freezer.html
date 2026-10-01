@@ -115,10 +115,24 @@
         <div class="card fz-detail" id="detailCard" style="display:none">
             <div class="card-header py-2 d-flex justify-content-between align-items-center">
                 <span class="fw-semibold" id="detailTitle"></span>
-                <button class="btn-close btn-sm" id="detailClose"></button>
+                <div class="d-flex gap-2 align-items-center">
+                    {% if not read_only %}
+                    <button class="btn btn-sm btn-outline-primary" id="fillRack"
+                            title="Create a box in every empty slot">
+                        <i class="bi bi-grid-fill"></i> Fill rack
+                    </button>
+                    {% endif %}
+                    <button class="btn-close btn-sm" id="detailClose"></button>
+                </div>
             </div>
             <div class="card-body">
                 <div class="fz-breadcrumb mb-2" id="detailPath"></div>
+                {% if not read_only %}
+                <div class="text-muted mb-2" style="font-size:.74rem">
+                    Tap an empty slot to put a box there. Boxes are numbered by
+                    position; double-click a name to change it.
+                </div>
+                {% endif %}
                 <div class="fz-detail-grid mb-3" id="detailGrid"></div>
                 <hr class="my-2">
                 <div id="boxContents">
@@ -363,21 +377,80 @@ function showBox(boxId) {
         `<div class="text-danger small">${esc(e.message)}</div>`));
 }
 
-// Add a box at a specific slot. Position is what makes the picture match the
-// rack, so it is set explicitly rather than appended.
+// In a 4x3 rack a box's identity IS its slot, so the name comes from the
+// position rather than being typed. Reading order: across, then down.
+function slotName(rack, r, c) {
+    const cols = rack.grid_cols || 4;
+    return String(r * cols + c + 1);
+}
+
+// One tap creates the box. No dialog -- there is nothing to decide.
 $(document).on('click', '.fz-detail-slot[data-newbox]', function () {
     if (READ_ONLY) return;
     const [r, c] = String($(this).data('newbox')).split(',').map(Number);
     const rack = BY_ID[SELECTED_RACK];
-    const existing = childrenOf(SELECTED_RACK).length;
-    const label = prompt(`Name for the box at column ${c + 1}, row ${r + 1} `
-                       + `of ${rack.label}:`, `Box ${existing + 1}`);
-    if (!label) return;
     api('/api/storage/containers', {
         method: 'POST',
         body: JSON.stringify({unit_id: rack.unit_id, parent_id: rack.id,
-                              kind: 'box', label, pos_row: r, pos_col: c})
+                              kind: 'box', label: slotName(rack, r, c),
+                              pos_row: r, pos_col: c})
     }).then(() => load(true)).catch(e => alert(e.message));
+});
+
+// Fill every empty slot in the rack at once, which is the common case when
+// a rack is actually full of boxes.
+$(document).on('click', '#fillRack', function () {
+    if (READ_ONLY || !SELECTED_RACK) return;
+    const rack = BY_ID[SELECTED_RACK];
+    const cols = rack.grid_cols || 4, rows = rack.grid_rows || 3;
+    const taken = new Set(childrenOf(rack.id).map(b => `${b.pos_row},${b.pos_col}`));
+
+    const missing = [];
+    for (let r = 0; r < rows; r++)
+        for (let c = 0; c < cols; c++)
+            if (!taken.has(`${r},${c}`)) missing.push([r, c]);
+
+    if (!missing.length) { alert('That rack is already full.'); return; }
+    if (!confirm(`Create ${missing.length} box(es) to fill ${rack.label}?`)) return;
+
+    // Sequential rather than parallel: positions are assigned server-side and
+    // concurrent creates would race for the same slot.
+    missing.reduce((chain, [r, c]) => chain.then(() =>
+        api('/api/storage/containers', {
+            method: 'POST',
+            body: JSON.stringify({unit_id: rack.unit_id, parent_id: rack.id,
+                                  kind: 'box', label: slotName(rack, r, c),
+                                  pos_row: r, pos_col: c})
+        })
+    ), Promise.resolve())
+     .then(() => load(true))
+     .catch(e => { alert(e.message); load(true); });
+});
+
+// Rename a box in place -- double-click, as in the tree editor.
+$(document).on('dblclick', '.fz-detail-slot[data-box] .bx-name', function (e) {
+    if (READ_ONLY) return;
+    e.stopPropagation();
+    const $el = $(this);
+    const id = +$el.closest('[data-box]').data('box');
+    const original = $el.text();
+    $el.attr('contenteditable', 'true').focus();
+    document.execCommand('selectAll', false, null);
+
+    const finish = save => {
+        $el.attr('contenteditable', 'false').off('blur keydown');
+        const value = $el.text().trim();
+        if (!save || !value || value === original) { $el.text(original); return; }
+        api(`/api/storage/containers/${id}`, {
+            method: 'PUT', body: JSON.stringify({label: value})
+        }).then(() => load(true))
+          .catch(err => { alert(err.message); $el.text(original); });
+    };
+    $el.on('blur', () => finish(true));
+    $el.on('keydown', ev => {
+        if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
+        if (ev.key === 'Escape') { ev.preventDefault(); finish(false); }
+    });
 });
 
 $('#detailClose').on('click', () => {

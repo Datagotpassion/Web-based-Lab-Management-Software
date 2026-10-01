@@ -238,14 +238,14 @@ class StorageTree:
             raise StorageError('Count must be between 1 and 100')
         parent = self.get_container(parent_id)
         axis = DEFAULT_AXIS.get(kind, 'row')
-        base_row, base_col = self._next_position(parent_id, parent['unit_id'], axis)
 
+        # Positions are resolved one at a time so a parent with a declared grid
+        # fills its slots in reading order rather than running off one axis.
         created = []
-        with self._conn() as c:
-            for i in range(count):
-                label = f'{prefix}{_label_for(i + start - 1, scheme)}'
-                row = base_row + (i if axis == 'row' else 0)
-                col = base_col + (i if axis == 'col' else 0)
+        for i in range(count):
+            row, col = self._next_position(parent_id, parent['unit_id'], axis)
+            label = f'{prefix}{_label_for(i + start - 1, scheme)}'
+            with self._conn() as c:
                 cur = c.execute(
                     'INSERT INTO storage_containers (unit_id, parent_id, kind,'
                     ' label, pos_row, pos_col) VALUES (?,?,?,?,?,?)',
@@ -568,9 +568,33 @@ class StorageTree:
         return cls._move_items(conn, container_ids, None)
 
     def _next_position(self, parent_id, unit_id, axis):
-        """Next free slot among a parent's children, along the given axis."""
-        field = 'pos_col' if axis == 'col' else 'pos_row'
+        """Next free slot among a parent's children.
+
+        When the parent declares a grid -- a rack that is 4 columns by 3 rows,
+        say -- slots are filled in reading order across then down, so position
+        reflects the physical arrangement. Without a declared grid, children
+        simply extend along the given axis.
+        """
         with self._conn() as c:
+            if parent_id is not None:
+                parent = c.execute(
+                    'SELECT grid_rows, grid_cols FROM storage_containers'
+                    ' WHERE id = ?', (parent_id,)).fetchone()
+                if parent and parent['grid_cols']:
+                    cols = parent['grid_cols']
+                    rows = parent['grid_rows'] or 0
+                    taken = {(r['pos_row'], r['pos_col']) for r in c.execute(
+                        'SELECT pos_row, pos_col FROM storage_containers'
+                        ' WHERE parent_id = ?', (parent_id,))}
+                    limit = rows if rows else 1000
+                    for r in range(limit):
+                        for col in range(cols):
+                            if (r, col) not in taken:
+                                return (r, col)
+                    raise StorageError(
+                        f'No free slot: that container is full ({cols}x{rows}).')
+
+            field = 'pos_col' if axis == 'col' else 'pos_row'
             if parent_id is None:
                 row = c.execute(
                     f'SELECT MAX({field}) m FROM storage_containers'
