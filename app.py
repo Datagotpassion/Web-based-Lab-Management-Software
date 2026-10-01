@@ -20,6 +20,16 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max request size
 # file on the Pi without editing code.
 DB_PATH = os.environ.get('LABMANAGER_DB', 'lab_management.db')
 
+# Read-only mode, for the freezer display.
+#
+# That instance holds a replica that is periodically overwritten from the lab
+# PC. A write accepted there would succeed, look fine, and then be destroyed by
+# the next sync -- silent data loss. Refusing the write outright is the honest
+# behaviour, so the only place that accepts changes is the machine holding the
+# authoritative database.
+READ_ONLY = os.environ.get('LABMANAGER_READONLY', '').strip().lower() in (
+    '1', 'true', 'yes', 'on')
+
 db = Database(DB_PATH)
 
 # Storage container tree (units > sections > shelves > racks > boxes > ...).
@@ -27,11 +37,27 @@ db = Database(DB_PATH)
 storage = StorageTree(DB_PATH).ensure_schema()
 
 
+@app.before_request
+def block_writes_when_read_only():
+    """Refuse every mutating request on a read-only replica.
+
+    Applied here rather than per-endpoint so a route added later is covered by
+    default -- the failure mode of forgetting is silent data loss.
+    """
+    if READ_ONLY and request.method not in ('GET', 'HEAD', 'OPTIONS'):
+        return jsonify({
+            'success': False,
+            'error': 'This display is read-only. It shows a copy of the lab PC '
+                     'database, refreshed periodically. Add or edit records on '
+                     'the lab PC.',
+        }), 403
+
+
 @app.context_processor
 def inject_settings():
     """Make settings available to all templates"""
     settings = db.get_all_settings()
-    return {'lab_settings': settings}
+    return {'lab_settings': settings, 'read_only': READ_ONLY}
 
 
 @app.route('/')
@@ -602,7 +628,10 @@ def api_health():
         placed = sum(1 for r in records if r['container_id'] is not None)
         return jsonify({
             'status': 'ok',
+            'read_only': READ_ONLY,
             'database': os.path.abspath(DB_PATH),
+            'database_mtime': datetime.fromtimestamp(
+                os.path.getmtime(DB_PATH)).isoformat(timespec='seconds'),
             'units': len(units),
             'containers': len(containers),
             'records': len(records),
