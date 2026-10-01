@@ -1,346 +1,145 @@
-# Lab Management System - Web Interface
+# Lab Management System
 
-A modern web-based laboratory inventory management system built with Flask, featuring:
-- Complete drug/reagent inventory tracking
-- Visual fridge storage with customizable grid layouts
-- Dilution and concentration calculators
-- Real-time search and filtering
-- CSV export functionality
+A local web app for tracking lab reagents and antibodies, where they are stored,
+and designing immunofluorescence panels. Flask + SQLite + Bootstrap 5.
 
-## Features
+Built for the Costa Lab (ISMMS).
 
-### 1. Inventory Management
-- Add, edit, and delete inventory records
-- Track stock concentrations, suppliers, lot numbers, and more
-- Real-time search by name, supplier, or notes
-- Filter by storage temperature
-- Comprehensive field tracking:
-  - Drug name, concentration, and unit
-  - Storage temperature and location
-  - Supplier and product information
-  - Preparation and expiration dates
-  - Sterility and light sensitivity
-  - Solvents and solubility information
+## What it does
 
-### 2. Visual Fridge Storage
-- Interactive grid visualization for 3 temperature zones:
-  - 4°C Fridge (body + door sections)
-  - -20°C Freezer (body + door sections)
-  - -80°C Ultra-Low Freezer (body only, no door)
-- Customizable grid layouts (rows and columns)
-- Color-coded cells:
-  - White = Empty
-  - Light Green = Single item
-  - Light Pink = Multiple items
-- Click on cells to view items at that location
-- Assign storage locations when adding/editing records
+### Storage structure
+Storage is a **tree of containers**, not a fixed grid. A unit (fridge, freezer,
+ultra-low, LN2, cabinet) contains whatever sections, shelves, racks, drawers,
+bins and boxes it actually has, nested to whatever depth the hardware has.
 
-### 3. Calculator Tools
+This matters because real appliances are irregular:
 
-#### Dilution Calculator
-- Calculate volumes for preparing dilutions using C₁V₁ = C₂V₂
-- Select components from inventory or enter manually
-- Large, readable results display
-- Formatted calculation breakdown
+- shelves can hold different numbers of racks, including none;
+- a unit can have no door storage, or several door compartments;
+- a compartment can run at a different temperature from its appliance
+  (a &minus;20&nbsp;&deg;C drawer inside a 4&nbsp;&deg;C fridge), and can be owned
+  by a different lab.
 
-#### Actual Concentration Calculator
-- Calculate final concentrations when adding multiple components to media
-- Add multiple components with different stock concentrations
-- Supports µL and mL volume units
-- Automatic final concentration calculations for each component
+Edit the structure at **Structure** (`/storage-editor`): add or delete units,
+add containers at any level, bulk-add ("4 racks, labelled A&ndash;D"), rename in
+place by double-clicking, reorder, or drag a container onto another to reparent.
 
-### 4. Fridge Configuration
-- Customize grid layout for each fridge
-- Set number of rows and columns for body and door sections
-- Changes apply immediately
-- Validation prevents door storage for -80°C freezers
+Two safety properties:
 
-### 5. Data Export
-- Export entire inventory to CSV format
-- Timestamped filenames
-- All fields included
+- **Deleting never loses items.** Items inside a deleted container move up to
+  its parent; deleting a unit leaves its items *unplaced* rather than deleting
+  them. Unplaced items are listed in the editor and on the home page.
+- **Reparenting cannot create a cycle.** Moving a shelf into its own rack is
+  refused.
 
-## System Requirements
+### Inventory
+The home page lists all reagent records with search and temperature filtering,
+alongside a live view of the storage tree with item counts per container. Click
+any container to see its contents, grouped by the container each item actually
+sits in.
 
-- Python 3.7 or higher
-- Modern web browser (Chrome, Firefox, Edge, Safari)
-- Windows, macOS, or Linux
+A record's location is any container at any depth &mdash; pick "Shelf 2" when
+that is all you know, and refine to a box later.
 
-## Installation
+### Antibodies
+`/antibodies` manages primary and secondary antibodies and includes a panel
+designer that flags two things people get wrong at the bench:
 
-1. **Install Python** (if not already installed)
-   - Download from https://www.python.org/downloads/
-   - During installation, check "Add Python to PATH"
+- **fluorophore collisions** &mdash; two primaries assigned the same fluorophore;
+- **cross-reactivity** &mdash; a selected secondary whose host species is itself
+  targeted by another selected secondary.
 
-2. **Install Required Packages**
+### Calculators
+- **Dilution** (C&#8321;V&#8321;&nbsp;=&nbsp;C&#8322;V&#8322;) with unit
+  conversion across molar, mass/volume and activity units.
+- **Actual concentration** for multiple components added to a fixed media volume.
 
-   Open Command Prompt or Terminal and navigate to the application folder:
-   ```bash
-   cd D:\lab_management_web
-   ```
+### Import / export
+CSV export includes a `Location` column holding the full container path
+(`-80°C Freezer > Body > Shelf 2 > B`). Import resolves that path back to the
+same container, so an export/import round trip preserves locations. An unknown
+or blank path leaves the item unplaced rather than failing the import.
 
-   Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+## Running it
 
-## Running the Application
-
-1. **Start the Server**
-
-   In the application folder, run:
-   ```bash
-   python app.py
-   ```
-
-   You should see:
-   ```
-   ================================================================================
-   Lab Management System - Web Interface
-   ================================================================================
-   Server starting on http://localhost:5000
-   Press Ctrl+C to stop the server
-   ================================================================================
-   ```
-
-2. **Open in Browser**
-
-   Open your web browser and go to:
-   ```
-   http://localhost:5000
-   ```
-
-3. **Stop the Server**
-
-   Press `Ctrl+C` in the terminal/command prompt window
-
-## Usage Guide
-
-### Managing Records
-
-#### Adding a New Record
-1. Click "Add New Record" button on the home page
-2. Fill in the required fields (drug name is mandatory)
-3. Optionally assign a storage location:
-   - Select section (body or door)
-   - Enter row and column numbers
-4. Click "Save Record"
-
-#### Editing a Record
-1. Click the pencil icon next to the record in the table
-2. Modify the fields as needed
-3. Click "Save Record"
-
-#### Deleting a Record
-1. Click the trash icon next to the record
-2. Confirm the deletion
-
-#### Searching and Filtering
-- Use the search box to find records by name, supplier, or notes
-- Use the temperature dropdown to filter by storage temperature
-- Click "Refresh" to reload all records
-
-### Using the Fridge Display
-
-#### Viewing Storage
-- The right panel shows visual grids for all three fridges
-- Cell colors indicate occupancy:
-  - White = Empty
-  - Light Green = 1 item stored
-  - Light Pink = Multiple items stored
-- Cell labels show section and position (e.g., "B00" = Body Row 0, Column 0)
-
-#### Viewing Items at a Location
-- Click any grid cell to see items stored at that location
-- A popup will show all records at that position
-- Click "Edit" on any item to modify its details
-
-### Using the Calculators
-
-#### Dilution Calculator
-1. Click "Calculators" → "Dilution Calculator" in the navigation menu
-2. Optionally select a component from your inventory
-3. Or manually enter:
-   - Stock concentration (C₁) and unit
-   - Desired final concentration (C₂) and unit
-   - Desired final volume (V₂) in mL
-4. Click "Calculate"
-5. Results show:
-   - Volume of stock solution needed
-   - Volume of solvent to add
-   - Preparation instructions
-
-#### Actual Concentration Calculator
-1. Click "Calculators" → "Actual Concentration Calculator"
-2. Enter the initial media volume (mL)
-3. Click "Add Component" to add each component
-4. For each component:
-   - Select from inventory or enter manually
-   - Enter stock concentration and unit
-   - Enter volume added (µL or mL)
-5. Click "Calculate Actual Concentrations"
-6. Results show final concentration for each component
-
-### Configuring Fridges
-
-1. Click "Configure Fridges" in the navigation menu
-2. For each fridge, set:
-   - Body section rows and columns (1-10)
-   - Door section rows and columns (1-10, not available for -80°C)
-3. Click "Save Configuration"
-4. Changes apply immediately
-5. Return to home page to see the updated grid layout
-
-### Exporting Data
-
-1. Click "Export CSV" in the navigation menu
-2. Your browser will download a CSV file named `lab_inventory_YYYYMMDD_HHMMSS.csv`
-3. Open in Excel, Google Sheets, or any spreadsheet application
-
-## File Structure
-
-```
-lab_management_web/
-├── app.py                      # Main Flask application
-├── database.py                 # Database operations
-├── requirements.txt            # Python dependencies
-├── README.md                   # This file
-├── lab_management.db           # SQLite database (auto-created)
-├── templates/                  # HTML templates
-│   ├── base.html              # Base template with navigation
-│   ├── index.html             # Main inventory page
-│   ├── config.html            # Fridge configuration page
-│   ├── dilution_calculator.html
-│   └── actual_concentration_calculator.html
-└── static/                     # Static files
-    ├── css/                    # Custom CSS (if any)
-    └── js/
-        └── main.js            # JavaScript for interactivity
+```bash
+pip install -r requirements.txt
+python app.py
 ```
 
-## Database
+Then open <http://localhost:5000>.
 
-The application uses SQLite with two main tables:
+The server currently binds `0.0.0.0:5000` using the Flask development server,
+with **no authentication**. That is fine on a trusted machine but is not a
+deployment: for shared or always-on use, put it behind a real WSGI server
+(waitress/gunicorn) and restrict access.
 
-### `drugs` Table
-Stores all inventory records with fields:
-- id, drug_name, stock_concentration, stock_unit
-- storage_temp, supplier, preparation_date
-- notes, solvents, solubility, light_sensitive
-- preparation_time, expiration_time, sterility
-- lot_number, product_number
-- storage_section, storage_row, storage_column
+## Backups
 
-### `fridge_config` Table
-Stores grid configuration for each temperature:
-- temp_key (4C, -20C, -80C)
-- body_rows, body_columns
-- door_rows, door_columns
+The database is **not** in version control (`*.db` is gitignored). Run:
 
-## Troubleshooting
+```bash
+python backup_db.py
+```
 
-### Server Won't Start
+This writes a timestamped copy of the `.db` (via sqlite's backup API, so it is
+safe while the app is serving) plus `schema.sql` and per-table CSVs into
+`backups/`. The text dumps are tracked, so database *content* is versioned even
+though the binary is not. Run it before any migration.
 
-**Error: "Address already in use"**
-- Another application is using port 5000
-- Solution: Stop the other application or change the port in `app.py` (last line)
+## Layout
 
-**Error: "No module named 'flask'"**
-- Flask is not installed
-- Solution: Run `pip install -r requirements.txt`
+```
+app.py                     Flask routes
+database.py                reagent + antibody records, CSV import/export
+storage.py                 the storage container tree (canonical schema + logic)
+migrate_containers.py      one-off: flat zones -> container tree
+migrate_cleanup.py         one-off: retire the legacy location tables
+backup_db.py               backups
+templates/
+  base.html                nav, settings modal
+  index.html               records table + storage overview
+  storage_editor.html      structure editor
+  antibodies.html          antibody management + panel designer
+  dilution_calculator.html
+  actual_concentration_calculator.html
+  import_export.html
+static/js/main.js          home page behaviour
+tests/                     pytest suite
+```
 
-### Database Issues
+### Schema
 
-**Error: "Database is locked"**
-- Another process is accessing the database
-- Solution: Close any other instances of the application
+| Table | Holds |
+|---|---|
+| `storage_units` | appliances: name, kind, room, default temperature |
+| `storage_containers` | the tree: self-referencing `parent_id`, kind, label, temperature override, owning lab, position within parent, optional reference photo |
+| `drugs` | reagent records; `container_id` is the location |
+| `primary_antibodies`, `secondary_antibodies` | antibodies; `container_id` is the location |
+| `settings` | lab name, PI name |
 
-**Missing data after migration**
-- The database file might not have been copied
-- Solution: Copy `lab_management.db` from the original folder to `D:\lab_management_web\`
+Deletion is done with explicit recursive SQL rather than `ON DELETE CASCADE`,
+because sqlite only honours foreign keys when `PRAGMA foreign_keys` is `ON` per
+connection and `database.py` does not set it.
 
-### Browser Issues
+## Tests
 
-**Page not loading**
-- Check that the server is running in the terminal
-- Try a different browser
-- Clear browser cache
+```bash
+python -m pytest tests -q
+```
 
-**Features not working**
-- Ensure JavaScript is enabled in your browser
-- Check browser console for errors (F12)
+Covers the storage tree (irregular layouts, cycle prevention, delete semantics,
+bulk labelling, CSV location round-trip), the record and calculator APIs, and
+CSV import/export.
 
-## Migrating Data from Desktop Application
+## History
 
-If you have data in the old desktop application:
+Locations were originally a fixed body/door grid per appliance, later a
+photo-region system, then a flat list of named zones &mdash; three overlapping
+models in the schema at once, with temperature and lab ownership encoded in zone
+name strings for want of columns. `migrate_containers.py` consolidated all of it
+into the container tree; `migrate_cleanup.py` dropped the legacy tables and
+columns. Both scripts default to a dry run that reports what they would change.
 
-1. **Locate the database file**
-   - Original location: `D:\lab_management\lab_management.db`
-
-2. **Copy to web application folder**
-   ```bash
-   copy D:\lab_management\lab_management.db D:\lab_management_web\lab_management.db
-   ```
-
-3. **Restart the web application**
-   - Stop the server (Ctrl+C)
-   - Start again: `python app.py`
-
-Your data will now be available in the web interface!
-
-## Security Notes
-
-- This application runs on **localhost only** - it's not accessible from other computers
-- No user authentication is implemented - anyone with access to your computer can use it
-- For production use in a shared environment, consider adding authentication
-- The database file contains all your data - keep backups regularly
-
-## Backup Recommendations
-
-1. **Regular Backups**
-   - Copy `lab_management.db` to a backup location regularly
-   - Use cloud storage (Google Drive, Dropbox) for automatic backups
-
-2. **Export CSV**
-   - Periodically export your inventory to CSV as a backup
-   - CSV files can be opened in any spreadsheet application
-
-3. **Automatic Backup Script** (Optional)
-   - Create a batch file to copy the database to a backup folder
-   - Schedule it to run daily using Windows Task Scheduler
-
-## Support and Development
-
-### Original Desktop Application
-- Backup location: `D:\lab_management_backup_20260116_204349\`
-- Contains: `lab_manager.py`, `README.txt`, database, and config files
-
-### Web Application
-- Current location: `D:\lab_management_web\`
-- Built with Flask and Bootstrap 5
-- Responsive design works on tablets and mobile devices
-
-## Version History
-
-### Web Version 1.0 (2026-01-16)
-- Initial web-based interface
-- Complete feature parity with desktop application
-- Responsive Bootstrap 5 UI
-- Real-time interactive fridge grids
-- Enhanced calculator interfaces
-- CSV export functionality
-
-### Desktop Version (Legacy)
-- Original tkinter-based application
-- All features migrated to web version
-- Backup preserved for reference
-
-## License
-
-This is a custom application developed for laboratory inventory management.
-Not licensed for redistribution or commercial use.
-
----
-
-**Lab Management System Web Interface**
-Version 1.0 - January 2026
+The pre-migration state is recoverable from `backups/csv/` in git history, and
+each container records the zone it came from in `legacy_zone_id`.

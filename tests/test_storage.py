@@ -356,3 +356,74 @@ class TestRobustness:
             tree.get_unit(9999)
         with pytest.raises(StorageError, match='No container'):
             tree.get_container(9999)
+
+
+# ------------------------------------------------------- csv location round trip
+
+class TestCsvLocationRoundTrip:
+    """CSV export/import used to carry Storage Section/Row/Column. Those columns
+    are gone; a single "Location" path column replaces them, and it has to
+    resolve back to the same container on import."""
+
+    def test_export_writes_the_full_container_path(self, tree):
+        db = Database(tree.db_path)
+        unit = tree.create_unit('-80 Freezer', kind='ultralow', default_temp_c=-80)
+        body = tree.create_container(unit['id'], None, 'section', 'Body')
+        shelf = tree.create_container(unit['id'], body['id'], 'shelf', 'Shelf 2')
+        rack = tree.create_container(unit['id'], shelf['id'], 'rack', 'B')
+
+        db.add_record({**_blank_drug(), 'drug_name': 'BMP4',
+                       'container_id': rack['id']})
+
+        csv_text = db.export_to_csv()
+        header, *rows = csv_text.strip().split('\n')
+        assert 'Location' in header
+        assert 'Storage Section' not in header
+        assert '"-80 Freezer > Body > Shelf 2 > B"' in rows[0]
+
+    def test_import_resolves_the_path_back_to_the_container(self, tree):
+        db = Database(tree.db_path)
+        unit = tree.create_unit('-80 Freezer', kind='ultralow', default_temp_c=-80)
+        body = tree.create_container(unit['id'], None, 'section', 'Body')
+        shelf = tree.create_container(unit['id'], body['id'], 'shelf', 'Shelf 2')
+        rack = tree.create_container(unit['id'], shelf['id'], 'rack', 'B')
+
+        db.add_record({**_blank_drug(), 'drug_name': 'BMP4',
+                       'container_id': rack['id']})
+        exported = db.export_to_csv()
+
+        # Wipe and re-import what we just exported.
+        with tree._conn() as c:
+            c.execute('DELETE FROM drugs')
+        result = db.import_from_csv(exported)
+
+        assert result['success'] == 1, result['errors']
+        with tree._conn() as c:
+            row = c.execute(
+                'SELECT drug_name, container_id FROM drugs').fetchone()
+        assert row['drug_name'] == 'BMP4'
+        assert row['container_id'] == rack['id']
+
+    def test_unknown_or_blank_location_imports_unplaced(self, tree):
+        db = Database(tree.db_path)
+        csv_text = (
+            'Drug Name,Stock Concentration,Unit,Storage Temperature,Supplier,'
+            'Preparation Date,Notes,Solvents,Solubility,Light Sensitive,'
+            'Preparation Time,Expiration Time,Sterility,Lot Number,'
+            'Product Number,Location\n'
+            'Blank loc,1,mM,4C,,,,,,,,,,,,\n'
+            'Bogus loc,1,mM,4C,,,,,,,,,,,,"Nowhere > Shelf 9"\n'
+        )
+        result = db.import_from_csv(csv_text)
+        # Neither row should fail the import; both just land unplaced.
+        assert result['success'] == 2, result['errors']
+        assert [i['name'] for i in tree.unplaced_items()] == ['Blank loc', 'Bogus loc']
+
+
+def _blank_drug():
+    """A drug record with every required key present and empty."""
+    return {k: None for k in (
+        'stock_concentration', 'stock_unit', 'storage_temp', 'supplier',
+        'preparation_date', 'notes', 'solvents', 'solubility',
+        'light_sensitive', 'preparation_time', 'expiration_time', 'sterility',
+        'lot_number', 'product_number')}

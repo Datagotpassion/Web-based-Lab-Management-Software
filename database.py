@@ -43,143 +43,24 @@ class Database:
                 sterility TEXT,
                 lot_number TEXT,
                 product_number TEXT,
-                storage_section TEXT,
-                storage_row INTEGER,
-                storage_column INTEGER
+                aliquot_volume TEXT,
+                container_id INTEGER
             )
         ''')
 
-        # Add storage location columns if they don't exist
+        # Columns added after the original schema. Location lives in
+        # container_id, pointing into the storage_containers tree; the old
+        # storage_section / storage_row / storage_column grid and the
+        # fridge_region_id zone link were dropped by migrate_cleanup.py.
         existing_columns = [col[1] for col in cursor.execute("PRAGMA table_info(drugs)").fetchall()]
         new_columns = [
-            ('storage_section', 'TEXT'),
-            ('storage_row', 'INTEGER'),
-            ('storage_column', 'INTEGER'),
-            ('fridge_region_id', 'INTEGER'),  # Legacy: link to schematic zone
-            ('aliquot_volume', 'TEXT'),  # Aliquot volume (e.g., "50 µL", "1 mL")
-            ('container_id', 'INTEGER')  # Location in the storage container tree
+            ('aliquot_volume', 'TEXT'),  # e.g. "50 µL", "1 mL"
+            ('container_id', 'INTEGER')  # location in the storage container tree
         ]
 
         for col_name, col_type in new_columns:
             if col_name not in existing_columns:
                 cursor.execute(f'ALTER TABLE drugs ADD COLUMN {col_name} {col_type}')
-
-        # Create fridge layouts table (stores photos)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS fridge_layouts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                temp_key TEXT NOT NULL,
-                section TEXT NOT NULL,
-                photo_filename TEXT NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(temp_key, section)
-            )
-        ''')
-
-        # Create fridge regions table (stores clickable regions on photos)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS fridge_regions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                layout_id INTEGER NOT NULL,
-                region_name TEXT NOT NULL,
-                x INTEGER NOT NULL,
-                y INTEGER NOT NULL,
-                width INTEGER NOT NULL,
-                height INTEGER NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (layout_id) REFERENCES fridge_layouts(id) ON DELETE CASCADE
-            )
-        ''')
-
-        # Create schematic layouts table (stores digital layout structure)
-        # Check if old table exists with wrong constraint
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='fridge_schematic_layouts'")
-        if cursor.fetchone():
-            # Check if we need to migrate (old table has UNIQUE on temp_key, section)
-            cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='fridge_schematic_layouts'")
-            create_sql = cursor.fetchone()[0]
-            if 'UNIQUE(temp_key, section)' in create_sql or 'fridge_id' not in create_sql:
-                # Need to migrate - recreate table with correct schema
-                cursor.execute('ALTER TABLE fridge_schematic_layouts RENAME TO fridge_schematic_layouts_old')
-                cursor.execute('''
-                    CREATE TABLE fridge_schematic_layouts (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        temp_key TEXT NOT NULL,
-                        section TEXT NOT NULL,
-                        layout_name TEXT,
-                        reference_photo TEXT,
-                        fridge_id INTEGER,
-                        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE(fridge_id, section)
-                    )
-                ''')
-                # Copy data from old table, trying to match fridge_id based on temp_key
-                cursor.execute('''
-                    INSERT INTO fridge_schematic_layouts (id, temp_key, section, layout_name, reference_photo, fridge_id, created_at, updated_at)
-                    SELECT
-                        old.id, old.temp_key, old.section, old.layout_name, old.reference_photo,
-                        (SELECT f.id FROM fridges f WHERE f.temp_type = old.temp_key LIMIT 1),
-                        old.created_at, old.updated_at
-                    FROM fridge_schematic_layouts_old old
-                ''')
-                cursor.execute('DROP TABLE fridge_schematic_layouts_old')
-        else:
-            # Create new table with correct schema
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS fridge_schematic_layouts (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    temp_key TEXT NOT NULL,
-                    section TEXT NOT NULL,
-                    layout_name TEXT,
-                    reference_photo TEXT,
-                    fridge_id INTEGER,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(fridge_id, section)
-                )
-            ''')
-
-        # Create schematic zones table (stores individual zones in a layout)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS fridge_schematic_zones (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                layout_id INTEGER NOT NULL,
-                zone_name TEXT NOT NULL,
-                row_index INTEGER NOT NULL,
-                col_index INTEGER NOT NULL,
-                col_span INTEGER DEFAULT 1,
-                row_span INTEGER DEFAULT 1,
-                color TEXT DEFAULT '#e3f2fd',
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (layout_id) REFERENCES fridge_schematic_layouts(id) ON DELETE CASCADE
-            )
-        ''')
-
-        # Create fridge configuration table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS fridge_config (
-                temp_key TEXT PRIMARY KEY,
-                body_rows INTEGER DEFAULT 3,
-                body_columns INTEGER DEFAULT 3,
-                door_rows INTEGER DEFAULT 2,
-                door_columns INTEGER DEFAULT 2
-            )
-        ''')
-
-        # Initialize default fridge configurations
-        default_configs = [
-            ('4C', 3, 3, 2, 2),
-            ('-20C', 3, 3, 2, 2),
-            ('-80C', 3, 3, 0, 0)  # -80C has no door storage
-        ]
-
-        for temp_key, body_rows, body_cols, door_rows, door_cols in default_configs:
-            cursor.execute('''
-                INSERT OR IGNORE INTO fridge_config (temp_key, body_rows, body_columns, door_rows, door_columns)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (temp_key, body_rows, body_cols, door_rows, door_cols))
 
         # Create settings table for lab configuration
         cursor.execute('''
@@ -196,32 +77,6 @@ class Database:
         cursor.execute('''
             INSERT OR IGNORE INTO settings (key, value) VALUES ('pi_name', '')
         ''')
-
-        # Create fridges table for user-defined fridges
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS fridges (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                temp_type TEXT NOT NULL,
-                location TEXT,
-                has_door INTEGER DEFAULT 1,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
-        # Initialize default fridges if none exist
-        cursor.execute('SELECT COUNT(*) FROM fridges')
-        if cursor.fetchone()[0] == 0:
-            default_fridges = [
-                ('4°C Fridge', '4C', 'Main Lab', 1),
-                ('-20°C Freezer', '-20C', 'Main Lab', 1),
-                ('-80°C Freezer', '-80C', 'Main Lab', 0)
-            ]
-            for name, temp_type, location, has_door in default_fridges:
-                cursor.execute('''
-                    INSERT INTO fridges (name, temp_type, location, has_door)
-                    VALUES (?, ?, ?, ?)
-                ''', (name, temp_type, location, has_door))
 
         # Create primary antibodies table
         cursor.execute('''
@@ -246,7 +101,7 @@ class Database:
                 aliquot_volume TEXT,
                 validated TEXT,
                 notes TEXT,
-                fridge_region_id INTEGER,
+                container_id INTEGER,
                 is_conjugated INTEGER DEFAULT 0,
                 fluorophore TEXT,
                 fluorophore_excitation TEXT,
@@ -292,7 +147,7 @@ class Database:
                 stock_concentration TEXT,
                 aliquot_volume TEXT,
                 notes TEXT,
-                fridge_region_id INTEGER,
+                container_id INTEGER,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -328,9 +183,8 @@ class Database:
                 drug_name, stock_concentration, stock_unit, storage_temp,
                 supplier, preparation_date, notes, solvents, solubility,
                 light_sensitive, preparation_time, expiration_time, sterility,
-                lot_number, product_number, storage_section, storage_row, storage_column,
-                fridge_region_id, aliquot_volume, container_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                lot_number, product_number, aliquot_volume, container_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             data['drug_name'],
             data['stock_concentration'],
@@ -347,13 +201,8 @@ class Database:
             data['sterility'],
             data['lot_number'],
             data['product_number'],
-            data.get('storage_section'),
-            data.get('storage_row'),
-            data.get('storage_column'),
-            data.get('fridge_region_id'),
             data.get('aliquot_volume'),
-            # Location now lives in the storage container tree. fridge_region_id
-            # is kept above only so the legacy tables stay readable.
+            # Location is a node in the storage_containers tree.
             data.get('container_id')
         ))
 
@@ -384,10 +233,6 @@ class Database:
                 sterility = ?,
                 lot_number = ?,
                 product_number = ?,
-                storage_section = ?,
-                storage_row = ?,
-                storage_column = ?,
-                fridge_region_id = ?,
                 aliquot_volume = ?,
                 container_id = ?
             WHERE id = ?
@@ -407,10 +252,6 @@ class Database:
             data['sterility'],
             data['lot_number'],
             data['product_number'],
-            data.get('storage_section'),
-            data.get('storage_row'),
-            data.get('storage_column'),
-            data.get('fridge_region_id'),
             data.get('aliquot_volume'),
             data.get('container_id'),
             record_id
@@ -449,82 +290,43 @@ class Database:
         conn.close()
         return records
 
-    def get_records_by_location(self, temp_key, section, row, col):
-        """Get all records at a specific storage location"""
+    def container_paths(self):
+        """container id -> 'Unit > Section > Shelf > ...', for CSV export.
+
+        Built here with a recursive CTE rather than via StorageTree so the
+        export stays a single query and database.py keeps no import of it.
+        """
         conn = self.get_connection()
-        cursor = conn.cursor()
+        try:
+            rows = conn.execute('''
+                WITH RECURSIVE up(start_id, id, label, parent_id, unit_id, depth) AS (
+                    SELECT id, id, label, parent_id, unit_id, 0
+                      FROM storage_containers
+                    UNION ALL
+                    SELECT up.start_id, p.id, p.label, p.parent_id, p.unit_id,
+                           up.depth + 1
+                      FROM storage_containers p JOIN up ON up.parent_id = p.id
+                )
+                SELECT up.start_id, u.name AS unit, up.label, up.depth
+                  FROM up JOIN storage_units u ON u.id = up.unit_id
+                 ORDER BY up.start_id, up.depth DESC
+            ''').fetchall()
+        except sqlite3.OperationalError:
+            # Storage tables not created yet (very fresh database).
+            return {}
+        finally:
+            conn.close()
 
-        cursor.execute('''
-            SELECT * FROM drugs
-            WHERE storage_temp = ?
-            AND storage_section = ?
-            AND storage_row = ?
-            AND storage_column = ?
-        ''', (temp_key, section, row, col))
-
-        records = cursor.fetchall()
-        conn.close()
-        return records
-
-    def get_fridge_config(self, temp_key):
-        """Get fridge configuration for a specific temperature"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM fridge_config WHERE temp_key = ?', (temp_key,))
-        config = cursor.fetchone()
-        conn.close()
-        return config
-
-    def get_all_fridge_configs(self):
-        """Get all fridge configurations"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM fridge_config ORDER BY temp_key')
-        configs = cursor.fetchall()
-        conn.close()
-        return configs
-
-    def update_fridge_config(self, temp_key, body_rows, body_cols, door_rows, door_cols):
-        """Update fridge configuration"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            UPDATE fridge_config
-            SET body_rows = ?, body_columns = ?, door_rows = ?, door_columns = ?
-            WHERE temp_key = ?
-        ''', (body_rows, body_cols, door_rows, door_cols, temp_key))
-
-        conn.commit()
-        conn.close()
-
-    def get_storage_grid_data(self, temp_key):
-        """Get grid data for a specific fridge including item counts per cell"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-
-        # Get all records for this temperature
-        cursor.execute('''
-            SELECT storage_section, storage_row, storage_column, COUNT(*) as count
-            FROM drugs
-            WHERE storage_temp = ?
-            AND storage_section IS NOT NULL
-            AND storage_row IS NOT NULL
-            AND storage_column IS NOT NULL
-            GROUP BY storage_section, storage_row, storage_column
-        ''', (temp_key,))
-
-        grid_data = {}
-        for row in cursor.fetchall():
-            key = f"{row['storage_section']}-{row['storage_row']}-{row['storage_column']}"
-            grid_data[key] = row['count']
-
-        conn.close()
-        return grid_data
+        paths = {}
+        for r in rows:
+            entry = paths.setdefault(r['start_id'], [r['unit']])
+            entry.append(r['label'])
+        return {k: ' > '.join(v) for k, v in paths.items()}
 
     def export_to_csv(self):
         """Export all records to CSV format"""
         records = self.get_all_records()
+        paths = self.container_paths()
 
         csv_lines = []
         # Header
@@ -532,8 +334,7 @@ class Database:
             'ID', 'Drug Name', 'Stock Concentration', 'Unit', 'Storage Temperature',
             'Supplier', 'Preparation Date', 'Notes', 'Solvents', 'Solubility',
             'Light Sensitive', 'Preparation Time', 'Expiration Time', 'Sterility',
-            'Lot Number', 'Product Number', 'Storage Section', 'Storage Row', 'Storage Column',
-            'Aliquot Volume'
+            'Lot Number', 'Product Number', 'Location', 'Aliquot Volume'
         ]))
 
         # Data rows
@@ -555,9 +356,7 @@ class Database:
                 f'"{record["sterility"] or ""}"',
                 f'"{record["lot_number"] or ""}"',
                 f'"{record["product_number"] or ""}"',
-                f'"{record["storage_section"] or ""}"',
-                str(record['storage_row'] or ''),
-                str(record['storage_column'] or ''),
+                f'"{paths.get(record["container_id"], "")}"',
                 f'"{record["aliquot_volume"] or ""}"'
             ]))
 
@@ -571,6 +370,9 @@ class Database:
         """
         import csv
         from io import StringIO
+
+        # Reverse of container_paths, so an exported "Location" resolves back.
+        path_to_id = {v: k for k, v in self.container_paths().items()}
 
         results = {
             'success': 0,
@@ -614,23 +416,12 @@ class Database:
                     else:
                         stock_concentration = None
 
-                    storage_row = row.get('Storage Row', '').strip()
-                    if storage_row:
-                        try:
-                            storage_row = int(storage_row)
-                        except ValueError:
-                            storage_row = None
-                    else:
-                        storage_row = None
-
-                    storage_column = row.get('Storage Column', '').strip()
-                    if storage_column:
-                        try:
-                            storage_column = int(storage_column)
-                        except ValueError:
-                            storage_column = None
-                    else:
-                        storage_column = None
+                    # Match the exported "Location" path back to a container, so
+                    # an export/import round trip keeps locations. An unknown or
+                    # blank path simply leaves the item unplaced rather than
+                    # failing the import.
+                    location = row.get('Location', '').strip()
+                    container_id = path_to_id.get(location) if location else None
 
                     # Insert record
                     cursor.execute('''
@@ -638,9 +429,9 @@ class Database:
                             drug_name, stock_concentration, stock_unit, storage_temp,
                             supplier, preparation_date, notes, solvents, solubility,
                             light_sensitive, preparation_time, expiration_time, sterility,
-                            lot_number, product_number, storage_section, storage_row, storage_column,
+                            lot_number, product_number, container_id,
                             aliquot_volume
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         drug_name,
                         stock_concentration,
@@ -657,9 +448,7 @@ class Database:
                         row.get('Sterility', '').strip() or None,
                         row.get('Lot Number', '').strip() or None,
                         row.get('Product Number', '').strip() or None,
-                        row.get('Storage Section', '').strip() or None,
-                        storage_row,
-                        storage_column,
+                        container_id,
                         row.get('Aliquot Volume', '').strip() or None
                     ))
 
@@ -683,354 +472,6 @@ class Database:
         return results
 
     # ========== VISUAL FRIDGE LAYOUT METHODS ==========
-
-    def create_or_update_layout(self, temp_key, section, photo_filename):
-        """Create or update a fridge layout with photo"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            INSERT INTO fridge_layouts (temp_key, section, photo_filename, updated_at)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(temp_key, section)
-            DO UPDATE SET photo_filename = ?, updated_at = CURRENT_TIMESTAMP
-        ''', (temp_key, section, photo_filename, photo_filename))
-
-        layout_id = cursor.lastrowid or cursor.execute(
-            'SELECT id FROM fridge_layouts WHERE temp_key = ? AND section = ?',
-            (temp_key, section)
-        ).fetchone()[0]
-
-        conn.commit()
-        conn.close()
-        return layout_id
-
-    def get_layout(self, temp_key, section):
-        """Get fridge layout for specific temperature and section"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT * FROM fridge_layouts
-            WHERE temp_key = ? AND section = ?
-        ''', (temp_key, section))
-        layout = cursor.fetchone()
-        conn.close()
-        return layout
-
-    def get_all_layouts(self):
-        """Get all fridge layouts"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM fridge_layouts ORDER BY temp_key, section')
-        layouts = cursor.fetchall()
-        conn.close()
-        return layouts
-
-    def create_region(self, layout_id, region_name, x, y, width, height):
-        """Create a new region on a fridge layout"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            INSERT INTO fridge_regions (layout_id, region_name, x, y, width, height)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (layout_id, region_name, x, y, width, height))
-
-        region_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        return region_id
-
-    def update_region(self, region_id, region_name, x, y, width, height):
-        """Update an existing region"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            UPDATE fridge_regions
-            SET region_name = ?, x = ?, y = ?, width = ?, height = ?
-            WHERE id = ?
-        ''', (region_name, x, y, width, height, region_id))
-
-        conn.commit()
-        conn.close()
-
-    def delete_region(self, region_id):
-        """Delete a region"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM fridge_regions WHERE id = ?', (region_id,))
-        conn.commit()
-        conn.close()
-
-    def get_regions_for_layout(self, layout_id):
-        """Get all regions for a specific layout"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT * FROM fridge_regions
-            WHERE layout_id = ?
-            ORDER BY region_name
-        ''', (layout_id,))
-        regions = cursor.fetchall()
-        conn.close()
-        return regions
-
-    def get_region_by_id(self, region_id):
-        """Get a specific region by ID"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM fridge_regions WHERE id = ?', (region_id,))
-        region = cursor.fetchone()
-        conn.close()
-        return region
-
-    def get_items_in_region(self, region_id):
-        """Get all items stored in a specific region"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT * FROM drugs
-            WHERE fridge_region_id = ?
-            ORDER BY drug_name
-        ''', (region_id,))
-        items = cursor.fetchall()
-        conn.close()
-        return items
-
-    def assign_item_to_region(self, drug_id, region_id):
-        """Assign an inventory item to a visual region"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            UPDATE drugs
-            SET fridge_region_id = ?
-            WHERE id = ?
-        ''', (region_id, drug_id))
-        conn.commit()
-        conn.close()
-
-    def get_region_occupancy(self, layout_id):
-        """Get item counts for all regions in a layout"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT fr.id, fr.region_name, COUNT(d.id) as item_count
-            FROM fridge_regions fr
-            LEFT JOIN drugs d ON d.fridge_region_id = fr.id
-            WHERE fr.layout_id = ?
-            GROUP BY fr.id, fr.region_name
-            ORDER BY fr.region_name
-        ''', (layout_id,))
-        occupancy = cursor.fetchall()
-        conn.close()
-        return occupancy
-
-    # ========== SCHEMATIC LAYOUT METHODS ==========
-
-    def create_schematic_layout(self, temp_key, section, layout_name=None, reference_photo=None, fridge_id=None):
-        """Create a new schematic layout for a specific fridge"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-
-        if fridge_id:
-            # Per-fridge layout - check if exists for this fridge
-            cursor.execute('''
-                SELECT id FROM fridge_schematic_layouts
-                WHERE fridge_id = ? AND section = ?
-            ''', (fridge_id, section))
-            existing = cursor.fetchone()
-
-            if existing:
-                cursor.execute('''
-                    UPDATE fridge_schematic_layouts
-                    SET layout_name = ?, reference_photo = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                ''', (layout_name, reference_photo, existing[0]))
-                layout_id = existing[0]
-            else:
-                cursor.execute('''
-                    INSERT INTO fridge_schematic_layouts (temp_key, section, layout_name, reference_photo, fridge_id, updated_at)
-                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                ''', (temp_key, section, layout_name, reference_photo, fridge_id))
-                layout_id = cursor.lastrowid
-        else:
-            # Legacy temp_key based layout (for backwards compatibility)
-            cursor.execute('''
-                INSERT INTO fridge_schematic_layouts (temp_key, section, layout_name, reference_photo, updated_at)
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(temp_key, section)
-                DO UPDATE SET layout_name = ?, reference_photo = ?, updated_at = CURRENT_TIMESTAMP
-            ''', (temp_key, section, layout_name, reference_photo, layout_name, reference_photo))
-
-            layout_id = cursor.lastrowid or cursor.execute(
-                'SELECT id FROM fridge_schematic_layouts WHERE temp_key = ? AND section = ?',
-                (temp_key, section)
-            ).fetchone()[0]
-
-        conn.commit()
-        conn.close()
-        return layout_id
-
-    def get_schematic_layout(self, temp_key, section, fridge_id=None):
-        """Get schematic layout for specific fridge or temperature and section"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-
-        if fridge_id:
-            cursor.execute('''
-                SELECT * FROM fridge_schematic_layouts
-                WHERE fridge_id = ? AND section = ?
-            ''', (fridge_id, section))
-        else:
-            cursor.execute('''
-                SELECT * FROM fridge_schematic_layouts
-                WHERE temp_key = ? AND section = ? AND fridge_id IS NULL
-            ''', (temp_key, section))
-
-        layout = cursor.fetchone()
-        conn.close()
-        return layout
-
-    def get_schematic_layout_by_fridge(self, fridge_id, section):
-        """Get schematic layout for a specific fridge and section"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT * FROM fridge_schematic_layouts
-            WHERE fridge_id = ? AND section = ?
-        ''', (fridge_id, section))
-        layout = cursor.fetchone()
-        conn.close()
-        return layout
-
-    def get_all_schematic_layouts(self):
-        """Get all schematic layouts"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM fridge_schematic_layouts ORDER BY temp_key, section')
-        layouts = cursor.fetchall()
-        conn.close()
-        return layouts
-
-    def delete_schematic_layout(self, layout_id):
-        """Delete a schematic layout and all its zones"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM fridge_schematic_zones WHERE layout_id = ?', (layout_id,))
-        cursor.execute('DELETE FROM fridge_schematic_layouts WHERE id = ?', (layout_id,))
-        conn.commit()
-        conn.close()
-
-    def add_schematic_zone(self, layout_id, zone_name, row_index, col_index, col_span=1, row_span=1, color='#e3f2fd'):
-        """Add a zone to a schematic layout"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            INSERT INTO fridge_schematic_zones (layout_id, zone_name, row_index, col_index, col_span, row_span, color)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (layout_id, zone_name, row_index, col_index, col_span, row_span, color))
-
-        zone_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        return zone_id
-
-    def update_schematic_zone(self, zone_id, zone_name, row_index, col_index, col_span=1, row_span=1, color='#e3f2fd'):
-        """Update a schematic zone"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            UPDATE fridge_schematic_zones
-            SET zone_name = ?, row_index = ?, col_index = ?, col_span = ?, row_span = ?, color = ?
-            WHERE id = ?
-        ''', (zone_name, row_index, col_index, col_span, row_span, color, zone_id))
-
-        conn.commit()
-        conn.close()
-
-    def delete_schematic_zone(self, zone_id):
-        """Delete a schematic zone"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM fridge_schematic_zones WHERE id = ?', (zone_id,))
-        conn.commit()
-        conn.close()
-
-    def get_schematic_zones(self, layout_id):
-        """Get all zones for a schematic layout"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT * FROM fridge_schematic_zones
-            WHERE layout_id = ?
-            ORDER BY row_index, col_index
-        ''', (layout_id,))
-        zones = cursor.fetchall()
-        conn.close()
-        return zones
-
-    def get_schematic_zone_by_id(self, zone_id):
-        """Get a specific schematic zone"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM fridge_schematic_zones WHERE id = ?', (zone_id,))
-        zone = cursor.fetchone()
-        conn.close()
-        return zone
-
-    def get_items_in_zone(self, zone_id):
-        """Get all items stored in a schematic zone"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT * FROM drugs
-            WHERE fridge_region_id = ?
-            ORDER BY drug_name
-        ''', (zone_id,))
-        items = cursor.fetchall()
-        conn.close()
-        return items
-
-    def assign_item_to_zone(self, drug_id, zone_id):
-        """Assign an inventory item to a schematic zone"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            UPDATE drugs
-            SET fridge_region_id = ?
-            WHERE id = ?
-        ''', (zone_id, drug_id))
-        conn.commit()
-        conn.close()
-
-    def get_zone_occupancy(self, layout_id):
-        """Get item counts for all zones in a schematic layout"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT z.id, z.zone_name, z.row_index, z.col_index, z.color, COUNT(d.id) as item_count
-            FROM fridge_schematic_zones z
-            LEFT JOIN drugs d ON d.fridge_region_id = z.id
-            WHERE z.layout_id = ?
-            GROUP BY z.id, z.zone_name, z.row_index, z.col_index, z.color
-            ORDER BY z.row_index, z.col_index
-        ''', (layout_id,))
-        occupancy = cursor.fetchall()
-        conn.close()
-        return occupancy
-
-    def clear_schematic_zones(self, layout_id):
-        """Delete all zones from a schematic layout"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM fridge_schematic_zones WHERE layout_id = ?', (layout_id,))
-        conn.commit()
-        conn.close()
-
-    # ========== ANTIBODY METHODS ==========
 
     def get_all_primary_antibodies(self):
         """Get all primary antibodies"""
@@ -1060,7 +501,7 @@ class Database:
                 name, target_protein, host_species, clonality, isotype, clone_number,
                 supplier, catalog_number, lot_number, applications, fixation_compatibility,
                 dilution_if, dilution_wb, dilution_ihc, storage_temp, stock_concentration,
-                aliquot_volume, validated, notes, fridge_region_id,
+                aliquot_volume, validated, notes, container_id,
                 is_conjugated, fluorophore, fluorophore_excitation, fluorophore_emission
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
@@ -1083,7 +524,7 @@ class Database:
             data.get('aliquot_volume'),
             data.get('validated'),
             data.get('notes'),
-            data.get('fridge_region_id'),
+            data.get('container_id'),
             1 if data.get('is_conjugated') else 0,
             data.get('fluorophore'),
             data.get('fluorophore_excitation'),
@@ -1107,7 +548,7 @@ class Database:
                 lot_number = ?, applications = ?, fixation_compatibility = ?,
                 dilution_if = ?, dilution_wb = ?, dilution_ihc = ?, storage_temp = ?,
                 stock_concentration = ?, aliquot_volume = ?, validated = ?, notes = ?,
-                fridge_region_id = ?, is_conjugated = ?, fluorophore = ?,
+                container_id = ?, is_conjugated = ?, fluorophore = ?,
                 fluorophore_excitation = ?, fluorophore_emission = ?
             WHERE id = ?
         ''', (
@@ -1130,7 +571,7 @@ class Database:
             data.get('aliquot_volume'),
             data.get('validated'),
             data.get('notes'),
-            data.get('fridge_region_id'),
+            data.get('container_id'),
             1 if data.get('is_conjugated') else 0,
             data.get('fluorophore'),
             data.get('fluorophore_excitation'),
@@ -1178,7 +619,7 @@ class Database:
                 fluorophore_excitation, fluorophore_emission, cross_adsorbed,
                 cross_adsorbed_against, supplier, catalog_number, lot_number,
                 applications, dilution_if, dilution_wb, dilution_ihc, storage_temp,
-                stock_concentration, aliquot_volume, notes, fridge_region_id
+                stock_concentration, aliquot_volume, notes, container_id
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             data.get('name'),
@@ -1202,7 +643,7 @@ class Database:
             data.get('stock_concentration'),
             data.get('aliquot_volume'),
             data.get('notes'),
-            data.get('fridge_region_id')
+            data.get('container_id')
         ))
 
         ab_id = cursor.lastrowid
@@ -1222,7 +663,7 @@ class Database:
                 fluorophore_emission = ?, cross_adsorbed = ?, cross_adsorbed_against = ?,
                 supplier = ?, catalog_number = ?, lot_number = ?, applications = ?,
                 dilution_if = ?, dilution_wb = ?, dilution_ihc = ?, storage_temp = ?,
-                stock_concentration = ?, aliquot_volume = ?, notes = ?, fridge_region_id = ?
+                stock_concentration = ?, aliquot_volume = ?, notes = ?, container_id = ?
             WHERE id = ?
         ''', (
             data.get('name'),
@@ -1246,7 +687,7 @@ class Database:
             data.get('stock_concentration'),
             data.get('aliquot_volume'),
             data.get('notes'),
-            data.get('fridge_region_id'),
+            data.get('container_id'),
             ab_id
         ))
 
@@ -1354,81 +795,3 @@ class Database:
         return {row['key']: row['value'] for row in results}
 
     # ========== FRIDGE MANAGEMENT METHODS ==========
-
-    def get_all_fridges(self):
-        """Get all user-defined fridges"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM fridges ORDER BY name')
-        fridges = cursor.fetchall()
-        conn.close()
-        return fridges
-
-    def get_fridge_by_id(self, fridge_id):
-        """Get a single fridge by ID"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM fridges WHERE id = ?', (fridge_id,))
-        fridge = cursor.fetchone()
-        conn.close()
-        return fridge
-
-    def add_fridge(self, data):
-        """Add a new fridge"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            INSERT INTO fridges (name, temp_type, location, has_door)
-            VALUES (?, ?, ?, ?)
-        ''', (
-            data.get('name'),
-            data.get('temp_type'),
-            data.get('location'),
-            1 if data.get('has_door', True) else 0
-        ))
-
-        fridge_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        return fridge_id
-
-    def update_fridge(self, fridge_id, data):
-        """Update a fridge"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            UPDATE fridges SET
-                name = ?,
-                temp_type = ?,
-                location = ?,
-                has_door = ?
-            WHERE id = ?
-        ''', (
-            data.get('name'),
-            data.get('temp_type'),
-            data.get('location'),
-            1 if data.get('has_door', True) else 0,
-            fridge_id
-        ))
-
-        conn.commit()
-        conn.close()
-
-    def delete_fridge(self, fridge_id):
-        """Delete a fridge"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM fridges WHERE id = ?', (fridge_id,))
-        conn.commit()
-        conn.close()
-
-    def get_fridges_by_temp_type(self, temp_type):
-        """Get all fridges of a specific temperature type"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM fridges WHERE temp_type = ? ORDER BY name', (temp_type,))
-        fridges = cursor.fetchall()
-        conn.close()
-        return fridges

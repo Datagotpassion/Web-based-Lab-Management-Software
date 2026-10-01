@@ -64,16 +64,16 @@ def sample_record():
         'sterility': 'Sterile',
         'lot_number': 'LOT123',
         'product_number': 'PROD456',
-        'storage_section': 'body',
-        'storage_row': 1,
-        'storage_column': 1
+        # Location is a container id now; left unset so the fixture works
+        # without a storage structure. See test_storage.py for placement.
+        'container_id': None
     }
 
 
 @pytest.fixture
 def sample_csv_content():
     """Sample CSV content for import testing"""
-    return '''Drug Name,Stock Concentration,Unit,Storage Temperature,Supplier,Preparation Date,Notes,Solvents,Solubility,Light Sensitive,Preparation Time,Expiration Time,Sterility,Lot Number,Product Number,Storage Section,Storage Row,Storage Column
-Drug A,10,mM,4C,Supplier A,2024-01-01,Note A,DMSO,Soluble,No,10:00,2025-01-01,Sterile,LOT001,PROD001,body,1,1
-Drug B,20,µM,-20C,Supplier B,2024-02-01,Note B,Water,Soluble,Yes,11:00,2025-02-01,Non-sterile,LOT002,PROD002,door,1,2
-Drug C,5,mg/mL,-80C,Supplier C,2024-03-01,Note C,Ethanol,Partially,No,12:00,2025-03-01,Sterile,LOT003,PROD003,body,2,1'''
+    return '''Drug Name,Stock Concentration,Unit,Storage Temperature,Supplier,Preparation Date,Notes,Solvents,Solubility,Light Sensitive,Preparation Time,Expiration Time,Sterility,Lot Number,Product Number,Location
+Drug A,10,mM,4C,Supplier A,2024-01-01,Note A,DMSO,Soluble,No,10:00,2025-01-01,Sterile,LOT001,PROD001,
+Drug B,20,µM,-20C,Supplier B,2024-02-01,Note B,Water,Soluble,Yes,11:00,2025-02-01,Non-sterile,LOT002,PROD002,
+Drug C,5,mg/mL,-80C,Supplier C,2024-03-01,Note C,Ethanol,Partially,No,12:00,2025-03-01,Sterile,LOT003,PROD003,'''

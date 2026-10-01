@@ -21,74 +21,7 @@ CREATE TABLE drugs (
                 sterility TEXT,
                 lot_number TEXT,
                 product_number TEXT,
-                storage_section TEXT,
-                storage_row INTEGER,
-                storage_column INTEGER
-            , fridge_region_id INTEGER, aliquot_volume TEXT, container_id INTEGER);
-
-CREATE TABLE fridge_config (
-                temp_key TEXT PRIMARY KEY,
-                body_rows INTEGER DEFAULT 3,
-                body_columns INTEGER DEFAULT 3,
-                door_rows INTEGER DEFAULT 2,
-                door_columns INTEGER DEFAULT 2
-            );
-
-CREATE TABLE fridge_layouts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                temp_key TEXT NOT NULL,
-                section TEXT NOT NULL,
-                photo_filename TEXT NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(temp_key, section)
-            );
-
-CREATE TABLE fridge_regions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                layout_id INTEGER NOT NULL,
-                region_name TEXT NOT NULL,
-                x INTEGER NOT NULL,
-                y INTEGER NOT NULL,
-                width INTEGER NOT NULL,
-                height INTEGER NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (layout_id) REFERENCES fridge_layouts(id) ON DELETE CASCADE
-            );
-
-CREATE TABLE fridge_schematic_layouts (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        temp_key TEXT NOT NULL,
-                        section TEXT NOT NULL,
-                        layout_name TEXT,
-                        reference_photo TEXT,
-                        fridge_id INTEGER,
-                        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE(fridge_id, section)
-                    );
-
-CREATE TABLE fridge_schematic_zones (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                layout_id INTEGER NOT NULL,
-                zone_name TEXT NOT NULL,
-                row_index INTEGER NOT NULL,
-                col_index INTEGER NOT NULL,
-                col_span INTEGER DEFAULT 1,
-                row_span INTEGER DEFAULT 1,
-                color TEXT DEFAULT '#e3f2fd',
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (layout_id) REFERENCES "fridge_schematic_layouts_old"(id) ON DELETE CASCADE
-            );
-
-CREATE TABLE fridges (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                temp_type TEXT NOT NULL,
-                location TEXT,
-                has_door INTEGER DEFAULT 1,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
+                aliquot_volume TEXT, container_id INTEGER);
 
 CREATE TABLE primary_antibodies (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -111,7 +44,6 @@ CREATE TABLE primary_antibodies (
                 aliquot_volume TEXT,
                 validated TEXT,
                 notes TEXT,
-                fridge_region_id INTEGER,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             , is_conjugated INTEGER DEFAULT 0, fluorophore TEXT, fluorophore_excitation TEXT, fluorophore_emission TEXT, container_id INTEGER);
 
@@ -138,7 +70,6 @@ CREATE TABLE secondary_antibodies (
                 stock_concentration TEXT,
                 aliquot_volume TEXT,
                 notes TEXT,
-                fridge_region_id INTEGER,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             , container_id INTEGER);
 
@@ -166,7 +97,7 @@ CREATE TABLE storage_containers (
     depth_index INTEGER DEFAULT 0,
     color       TEXT,
     legacy_zone_id INTEGER,
-    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP, photo TEXT,
     FOREIGN KEY (unit_id)   REFERENCES storage_units(id)      ON DELETE CASCADE,
     FOREIGN KEY (parent_id) REFERENCES storage_containers(id) ON DELETE CASCADE
 );
