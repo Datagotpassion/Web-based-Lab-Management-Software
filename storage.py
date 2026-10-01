@@ -503,6 +503,53 @@ class StorageTree:
                     items.append({'table': table, 'id': r['id'], 'name': r['name']})
         return items
 
+    def place_items(self, items, container_id):
+        """Move several items into one container in a single transaction.
+
+        A box routinely holds many things, so assigning them one request at a
+        time is both slow and able to fail half way. Items are given as
+        [{'table': 'drugs', 'id': 12}, ...]; container_id of None unplaces them.
+        """
+        if container_id is not None:
+            self.get_container(container_id)
+        valid = dict(ITEM_TABLES)
+        moved = 0
+        with self._conn() as c:
+            for entry in items:
+                table = entry.get('table')
+                item_id = entry.get('id')
+                if table not in valid:
+                    raise StorageError(f'Unknown item table {table!r}')
+                cur = c.execute(f'UPDATE {table} SET container_id = ? WHERE id = ?',
+                                (container_id, item_id))
+                if cur.rowcount == 0:
+                    raise StorageError(f'No {table} row with id {item_id}')
+                moved += cur.rowcount
+        return moved
+
+    def placeable_items(self):
+        """Every item that can be given a location, with where it is now.
+
+        Feeds the "what goes in this box" picker, so one request is enough to
+        build it rather than one per row.
+        """
+        paths = {c['id']: c['full_path'] for c in self.flat_list()}
+        out = []
+        with self._conn() as c:
+            for table, name_col in ITEM_TABLES:
+                for r in c.execute(
+                        f'SELECT id, "{name_col}" AS name, container_id,'
+                        f' storage_temp FROM {table} ORDER BY "{name_col}"'):
+                    out.append({
+                        'table': table,
+                        'id': r['id'],
+                        'name': r['name'],
+                        'container_id': r['container_id'],
+                        'location': paths.get(r['container_id']),
+                        'storage_temp': r['storage_temp'],
+                    })
+        return out
+
     def place_item(self, table, item_id, container_id):
         if table not in dict(ITEM_TABLES):
             raise StorageError(f'Unknown item table {table!r}')

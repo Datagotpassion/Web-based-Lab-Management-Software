@@ -37,6 +37,16 @@
     .kind-box     { color: #198754; }
     .kind-drawer, .kind-bin, .kind-tray { color: #fd7e14; }
 
+    /* Miniature of a container's grid, so the physical shape is visible in
+       the tree rather than only in the freezer map. A rack that is 4 wide and
+       3 tall reads as such at a glance. */
+    .mini-grid { display: inline-grid; gap: 1px; vertical-align: middle;
+                 margin-left: .3rem; }
+    .mini-cell { width: 7px; height: 7px; border-radius: 1px;
+                 background: #e9ecef; border: 1px solid #dee2e6; }
+    .mini-cell.filled { background: #a3cfbb; border-color: #198754; }
+    .mini-cell.has-items { background: #198754; }
+
     .collapse-toggle { width: 1rem; text-align: center; cursor: pointer;
                        color: #adb5bd; user-select: none; }
     .collapse-toggle:hover { color: #495057; }
@@ -386,6 +396,29 @@ function nodeHtml(ct, unit) {
                     ${ct.subtree_item_count} total</span>`);
     if (hasKids)
         chips.push(`<span class="meta-chip">${ct.child_count} inside</span>`);
+
+    // A container with a declared grid gets a miniature of it, showing which
+    // slots are occupied. Makes "4 wide, 3 tall, half full" obvious here
+    // rather than only on the freezer map.
+    if (ct.grid_cols) {
+        const cols = ct.grid_cols, rows = ct.grid_rows || 1;
+        const occupied = {};
+        (ct.children || []).forEach(k => {
+            occupied[`${k.pos_row},${k.pos_col}`] = k;
+        });
+        let cells = '';
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const k = occupied[`${r},${c}`];
+                const cls = !k ? '' : (k.subtree_item_count ? 'filled has-items' : 'filled');
+                cells += `<span class="mini-cell ${cls}"></span>`;
+            }
+        }
+        chips.push(
+            `<span class="mini-grid" title="${cols} x ${rows} = ${cols * rows} slots, `
+            + `${ct.child_count} used" `
+            + `style="grid-template-columns: repeat(${cols}, 7px)">${cells}</span>`);
+    }
 
     const kids = hasKids && !collapsed
         ? `<div class="node-children">${ct.children.map(k => nodeHtml(k, unit)).join('')}</div>`

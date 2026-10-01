@@ -760,6 +760,29 @@ def api_container_items(container_id):
                     'path': storage.path(container_id)})
 
 
+@app.route('/api/storage/placeable', methods=['GET'])
+@storage_api
+def api_placeable_items():
+    """All items plus their current location, for the box contents picker."""
+    return jsonify({'items': storage.placeable_items()})
+
+
+@app.route('/api/storage/containers/<int:container_id>/items', methods=['POST'])
+@storage_api
+def api_place_items(container_id):
+    """Put several items into one container at once."""
+    moved = storage.place_items(_body().get('items', []), container_id)
+    return jsonify({'success': True, 'moved': moved})
+
+
+@app.route('/api/storage/unplace', methods=['POST'])
+@storage_api
+def api_unplace_items():
+    """Take several items out of wherever they are."""
+    moved = storage.place_items(_body().get('items', []), None)
+    return jsonify({'success': True, 'moved': moved})
+
+
 @app.route('/api/storage/place', methods=['POST'])
 @storage_api
 def api_place_item():
