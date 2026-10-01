@@ -48,6 +48,15 @@
     .fz-slot.has-items { background: #a3cfbb; }
     .fz-slot.empty-slot { border-style: dashed; }
 
+    /* Orientation. Slots run left to right and the door is on the right, so
+       the screen reads the same way round as the freezer does. */
+    .fz-door { flex: 0 0 26px; writing-mode: vertical-rl; text-align: center;
+               background: #e7f1ff; border: 1px solid #b6d4fe; border-radius: 4px;
+               color: #0d6efd; font-weight: 700; font-size: .68rem;
+               letter-spacing: .16em; display: flex; align-items: center;
+               justify-content: center; }
+    .fz-orient { font-size: .72rem; color: #6c757d; margin-bottom: .4rem; }
+
     /* Detail panel */
     .fz-detail { position: sticky; top: 1rem; }
     .fz-detail-grid { display: grid; gap: 10px; justify-content: start; }
@@ -115,22 +124,14 @@
         <div class="card fz-detail" id="detailCard" style="display:none">
             <div class="card-header py-2 d-flex justify-content-between align-items-center">
                 <span class="fw-semibold" id="detailTitle"></span>
-                <div class="d-flex gap-2 align-items-center">
-                    {% if not read_only %}
-                    <button class="btn btn-sm btn-outline-primary" id="fillRack"
-                            title="Create a box in every empty slot">
-                        <i class="bi bi-grid-fill"></i> Fill rack
-                    </button>
-                    {% endif %}
-                    <button class="btn-close btn-sm" id="detailClose"></button>
-                </div>
+                <button class="btn-close btn-sm" id="detailClose"></button>
             </div>
             <div class="card-body">
                 <div class="fz-breadcrumb mb-2" id="detailPath"></div>
                 {% if not read_only %}
                 <div class="text-muted mb-2" style="font-size:.74rem">
-                    Tap an empty slot to put a box there. Boxes are numbered by
-                    position; double-click a name to change it.
+                    Click a position to say what is stored there. Numbered left
+                    to right, door on the right.
                 </div>
                 {% endif %}
                 <div class="fz-detail-grid mb-3" id="detailGrid"></div>
@@ -261,6 +262,11 @@ function renderMap() {
         return;
     }
 
+    host.append(`<div class="fz-orient">
+        <i class="bi bi-arrow-right"></i>
+        Positions run left to right, then down. The door is on the right.
+    </div>`);
+
     sections.forEach(section => {
         const shelves = childrenOf(section.id);
         host.append(`<div class="fw-semibold text-muted small mt-2 mb-1">
@@ -282,6 +288,8 @@ function renderMap() {
                 racks.forEach(r => $racks.append(rackTile(r, false)));
             }
             $row.append($racks);
+            // The door edge, so the picture is oriented like the freezer.
+            $row.append('<div class="fz-door">DOOR</div>');
             host.append($row);
         });
     });
@@ -298,16 +306,20 @@ function rackTile(rack, isBareShelf) {
     const occupied = {};
     boxes.forEach(b => { occupied[`${b.pos_row},${b.pos_col}`] = b; });
 
+    // Every slot carries its position number, filled or not, so the grid can
+    // be read against the physical rack without counting.
     let slots = '';
     for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
             const b = occupied[`${r},${c}`];
+            const n = r * cols + c + 1;
             if (b) {
                 const cls = b.item_count ? 'filled has-items' : 'filled';
                 slots += `<div class="fz-slot ${cls}" title="${esc(b.label)} — `
                        + `${b.item_count} item(s)">${esc(shortLabel(b.label))}</div>`;
             } else {
-                slots += '<div class="fz-slot empty-slot"></div>';
+                slots += `<div class="fz-slot empty-slot" title="slot ${n}: empty">`
+                       + `${n}</div>`;
             }
         }
     }
@@ -361,21 +373,29 @@ function openRack(rackId, resetBox) {
     for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
             const b = occupied[`${r},${c}`];
+            const n = r * cols + c + 1;
             if (b) {
+                // A position that holds something. Clicking it edits what is
+                // there; the container behind it is an implementation detail.
                 $grid.append(`
                   <div class="fz-detail-slot filled ${b.id === SELECTED_BOX ? 'active' : ''}"
-                       data-box="${b.id}">
-                    <div class="bx-name" title="${esc(b.label)}">${esc(b.label)}</div>
+                       data-box="${b.id}" data-slot="${r},${c}"
+                       title="Position ${n} — ${b.item_count} item(s)">
+                    <div class="bx-name">${esc(b.label)}</div>
                     <div class="bx-n">${b.item_count} item${b.item_count === 1 ? '' : 's'}</div>
                   </div>`);
-            } else if (!READ_ONLY) {
+            } else if (READ_ONLY) {
+                $grid.append(`<div class="fz-detail-slot" style="opacity:.5"
+                                   title="Position ${n}: empty">
+                                <div class="bx-name text-muted">${n}</div>
+                              </div>`);
+            } else {
                 $grid.append(`
-                  <div class="fz-detail-slot" data-newbox="${r},${c}"
-                       title="Add a box here">
+                  <div class="fz-detail-slot" data-slot="${r},${c}"
+                       title="Position ${n} — put something here">
+                    <div class="bx-name text-muted">${n}</div>
                     <div class="bx-add"><i class="bi bi-plus-lg"></i></div>
                   </div>`);
-            } else {
-                $grid.append('<div class="fz-detail-slot" style="opacity:.4"></div>');
             }
         }
     }
@@ -385,11 +405,21 @@ function openRack(rackId, resetBox) {
         '<div class="text-muted small">Pick a box to see what is in it.</div>');
 }
 
-$(document).on('click', '.fz-detail-slot[data-box]', function () {
-    SELECTED_BOX = +$(this).data('box');
-    $('.fz-detail-slot').removeClass('active');
-    $(this).addClass('active');
-    showBox(SELECTED_BOX);
+// Clicking a position: on the PC that is how you say what is in it; on the
+// read-only display it just shows what is there.
+$(document).on('click', '.fz-detail-slot[data-slot]', function () {
+    const [r, c] = String($(this).data('slot')).split(',').map(Number);
+    const boxId = $(this).data('box') ? +$(this).data('box') : null;
+
+    if (READ_ONLY) {
+        if (!boxId) return;
+        SELECTED_BOX = boxId;
+        $('.fz-detail-slot').removeClass('active');
+        $(this).addClass('active');
+        showBox(boxId);
+        return;
+    }
+    openContents(SELECTED_RACK, r, c, boxId);
 });
 
 function showBox(boxId) {
@@ -427,12 +457,20 @@ function showBox(boxId) {
    belongs in the box, untick what does not. Unticking clears an item's
    location rather than deleting the record.
 */
-let CM_ITEMS = [], CM_BOX = null, CM_CHECKED = new Set();
+let CM_ITEMS = [], CM_BOX = null, CM_CHECKED = new Set(), CM_SLOT = null;
 
-$(document).on('click', '#editContents', function () {
-    CM_BOX = +$(this).data('box');
-    const box = BY_ID[CM_BOX];
-    $('#cmBoxName').text(box.full_path.split(' > ').slice(-3).join(' › '));
+// A position is the address; the container behind it exists only because
+// something is stored there. So it is created when the first item is put in
+// and removed when the last one leaves -- the user never names a "box".
+function openContents(rackId, r, c, boxId) {
+    const rack = BY_ID[rackId];
+    const cols = rack.grid_cols || 4;
+    const n = r * cols + c + 1;
+
+    CM_BOX = boxId;
+    CM_SLOT = {rackId, r, c, n};
+    $('#cmBoxName').text(
+        `${rack.full_path.split(' > ').slice(-2).join(' › ')} › position ${n}`);
     $('#cmFilter').val('');
     $('#cmUnplacedOnly').prop('checked', false);
     $('#cmList').html('<div class="text-muted small p-2">Loading…</div>');
@@ -441,11 +479,17 @@ $(document).on('click', '#editContents', function () {
     api('/api/storage/placeable').then(d => {
         // Reagents only: the -80 holds no antibodies.
         CM_ITEMS = d.items.filter(i => i.table === 'drugs');
-        CM_CHECKED = new Set(CM_ITEMS.filter(i => i.container_id === CM_BOX)
-                                     .map(i => i.id));
+        CM_CHECKED = new Set(
+            boxId ? CM_ITEMS.filter(i => i.container_id === boxId).map(i => i.id) : []);
         renderCmList();
     }).catch(e => $('#cmList').html(
         `<div class="text-danger small p-2">${esc(e.message)}</div>`));
+}
+
+$(document).on('click', '#editContents', function () {
+    const boxId = +$(this).data('box');
+    const box = BY_ID[boxId];
+    openContents(SELECTED_RACK, box.pos_row, box.pos_col, boxId);
 });
 
 function renderCmList() {
@@ -499,32 +543,56 @@ $(document).on('change', '.cm-tick', function () {
 });
 
 $('#cmSave').on('click', function () {
-    const before = new Set(CM_ITEMS.filter(i => i.container_id === CM_BOX)
-                                   .map(i => i.id));
+    const before = new Set(CM_BOX
+        ? CM_ITEMS.filter(i => i.container_id === CM_BOX).map(i => i.id) : []);
     const toAdd = [...CM_CHECKED].filter(id => !before.has(id));
     const toRemove = [...before].filter(id => !CM_CHECKED.has(id));
+    const close = () => bootstrap.Modal.getInstance($('#contentsModal')[0]).hide();
 
-    const calls = [];
-    if (toAdd.length) {
-        calls.push(api(`/api/storage/containers/${CM_BOX}/items`, {
-            method: 'POST',
-            body: JSON.stringify({items: toAdd.map(id => ({table: 'drugs', id}))})
-        }));
-    }
-    if (toRemove.length) {
-        calls.push(api('/api/storage/unplace', {
-            method: 'POST',
-            body: JSON.stringify({items: toRemove.map(id => ({table: 'drugs', id}))})
-        }));
-    }
-    if (!calls.length) {
-        bootstrap.Modal.getInstance($('#contentsModal')[0]).hide();
-        return;
-    }
-    Promise.all(calls).then(() => {
-        bootstrap.Modal.getInstance($('#contentsModal')[0]).hide();
-        return load(true);
-    }).catch(e => alert(e.message));
+    if (!toAdd.length && !toRemove.length) { close(); return; }
+
+    const rack = BY_ID[CM_SLOT.rackId];
+
+    // Create the container only when something is actually going in.
+    const ensureBox = CM_BOX
+        ? Promise.resolve(CM_BOX)
+        : api('/api/storage/containers', {
+              method: 'POST',
+              body: JSON.stringify({
+                  unit_id: rack.unit_id, parent_id: rack.id, kind: 'box',
+                  label: String(CM_SLOT.n),
+                  pos_row: CM_SLOT.r, pos_col: CM_SLOT.c})
+          }).then(res => res.container.id);
+
+    (CM_CHECKED.size === 0 && CM_BOX ? Promise.resolve(CM_BOX) : ensureBox)
+        .then(boxId => {
+            const calls = [];
+            if (toAdd.length) {
+                calls.push(api(`/api/storage/containers/${boxId}/items`, {
+                    method: 'POST',
+                    body: JSON.stringify(
+                        {items: toAdd.map(id => ({table: 'drugs', id}))})
+                }));
+            }
+            if (toRemove.length) {
+                calls.push(api('/api/storage/unplace', {
+                    method: 'POST',
+                    body: JSON.stringify(
+                        {items: toRemove.map(id => ({table: 'drugs', id}))})
+                }));
+            }
+            return Promise.all(calls).then(() => boxId);
+        })
+        .then(boxId => {
+            // Emptying a position frees the slot entirely rather than leaving
+            // an empty container that means nothing.
+            if (CM_CHECKED.size === 0 && boxId) {
+                return api(`/api/storage/containers/${boxId}?force=1`,
+                           {method: 'DELETE'});
+            }
+        })
+        .then(() => { close(); return load(true); })
+        .catch(e => alert(e.message));
 });
 
 // In a 4x3 rack a box's identity IS its slot, so the name comes from the
@@ -545,36 +613,6 @@ $(document).on('click', '.fz-detail-slot[data-newbox]', function () {
                               kind: 'box', label: slotName(rack, r, c),
                               pos_row: r, pos_col: c})
     }).then(() => load(true)).catch(e => alert(e.message));
-});
-
-// Fill every empty slot in the rack at once, which is the common case when
-// a rack is actually full of boxes.
-$(document).on('click', '#fillRack', function () {
-    if (READ_ONLY || !SELECTED_RACK) return;
-    const rack = BY_ID[SELECTED_RACK];
-    const cols = rack.grid_cols || 4, rows = rack.grid_rows || 3;
-    const taken = new Set(childrenOf(rack.id).map(b => `${b.pos_row},${b.pos_col}`));
-
-    const missing = [];
-    for (let r = 0; r < rows; r++)
-        for (let c = 0; c < cols; c++)
-            if (!taken.has(`${r},${c}`)) missing.push([r, c]);
-
-    if (!missing.length) { alert('That rack is already full.'); return; }
-    if (!confirm(`Create ${missing.length} box(es) to fill ${rack.label}?`)) return;
-
-    // Sequential rather than parallel: positions are assigned server-side and
-    // concurrent creates would race for the same slot.
-    missing.reduce((chain, [r, c]) => chain.then(() =>
-        api('/api/storage/containers', {
-            method: 'POST',
-            body: JSON.stringify({unit_id: rack.unit_id, parent_id: rack.id,
-                                  kind: 'box', label: slotName(rack, r, c),
-                                  pos_row: r, pos_col: c})
-        })
-    ), Promise.resolve())
-     .then(() => load(true))
-     .catch(e => { alert(e.message); load(true); });
 });
 
 // Rename a box in place -- double-click, as in the tree editor.
