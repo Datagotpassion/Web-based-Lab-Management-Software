@@ -7,7 +7,8 @@
 
 set -uo pipefail
 
-URL="${KIOSK_URL:-http://localhost:5000/}"
+# The freezer-side touch UI, not the desk pages.
+URL="${KIOSK_URL:-http://localhost:5000/kiosk}"
 PROFILE="${KIOSK_PROFILE:-$HOME/.config/labmanager-kiosk}"
 LOG="${KIOSK_LOG:-$HOME/.local/state/labmanager-kiosk.log}"
 
