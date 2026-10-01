@@ -53,8 +53,8 @@ id,unit_id,parent_id,kind,label,temp_c,owner_lab,grid_rows,grid_cols,pos_row,pos
 52,5,49,shelf,Shelf 3,4.0,Amy Lab,,,2,0,1,1,0,#e8f5e9,57,2026-10-01 13:59:04
 53,5,49,shelf,Shelf 4,,Costa Lab,,,3,0,1,1,0,#fce4ec,58,2026-10-01 13:59:04
 54,5,49,shelf,Shelf 5,,Costa Lab,,,4,0,1,1,0,#e3f2fd,59,2026-10-01 13:59:04
-55,5,49,drawer,Shelf 5 Right Drawer,,Costa Lab,,,4,1,1,1,0,#e3f2fd,60,2026-10-01 13:59:04
-56,5,49,drawer,Shelf 6 Left Drawer,,,,,5,0,1,1,0,#e3f2fd,61,2026-10-01 13:59:04
+55,5,49,drawer,Shelf 5 Right Drawer,,Costa Lab,,,5,1,1,1,0,#e3f2fd,60,2026-10-01 13:59:04
+56,5,49,drawer,Shelf 6 Left Drawer,,,,,4,0,1,1,0,#e3f2fd,61,2026-10-01 13:59:04
 57,5,49,drawer,Shelf 6 Right Drawer,,,,,5,1,1,1,0,#e3f2fd,62,2026-10-01 13:59:04
 58,5,,section,Door,,,,,0,0,1,1,0,,,2026-10-01 13:59:04
 59,5,58,shelf,Shelf 1,-20.0,,,,0,0,1,1,0,#e3f2fd,63,2026-10-01 13:59:04

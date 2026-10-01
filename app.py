@@ -20,8 +20,9 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 # Initialize database
 db = Database('lab_management.db')
 
-# Storage container tree (units > sections > shelves > racks > boxes > ...)
-storage = StorageTree('lab_management.db')
+# Storage container tree (units > sections > shelves > racks > boxes > ...).
+# ensure_schema is idempotent and makes a fresh install come up working.
+storage = StorageTree('lab_management.db').ensure_schema()
 
 # Ensure upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -474,13 +475,8 @@ def import_export_page():
     return render_template('import_export.html')
 
 
-# ========== VISUAL FRIDGE LAYOUT ROUTES ==========
-
-@app.route('/visual-fridge-display')
-def visual_fridge_display():
-    """Visual fridge display page - view and interact with photo-based layouts"""
-    return render_template('visual_fridge_display.html')
-
+# ========== LEGACY PHOTO-LAYOUT API (pages removed; endpoints kept until
+# the legacy fridge_layouts / fridge_regions tables are dropped) ==========
 
 @app.route('/api/layout/upload', methods=['POST'])
 def upload_layout_photo():
@@ -638,13 +634,8 @@ def get_layout_by_temp_section(temp_key, section):
         return jsonify({'error': str(e)}), 500
 
 
-# ========== SCHEMATIC LAYOUT ROUTES ==========
-
-@app.route('/schematic-layout-builder')
-def schematic_layout_builder():
-    """Schematic fridge layout builder page"""
-    return render_template('schematic_layout_builder.html')
-
+# ========== LEGACY SCHEMATIC API (builder page removed; endpoints kept
+# until the legacy fridge_schematic_* tables are dropped) ==========
 
 @app.route('/api/schematic/<temp_key>/<section>', methods=['GET'])
 def get_schematic_layout(temp_key, section):
@@ -1058,6 +1049,13 @@ def storage_editor():
 def api_storage_tree(unit_id=None):
     return jsonify({'units': storage.get_tree(unit_id),
                     'unplaced': storage.unplaced_items()})
+
+
+@app.route('/api/storage/flat', methods=['GET'])
+@storage_api
+def api_storage_flat():
+    """Flat container list with full paths, for pickers and location labels."""
+    return jsonify({'containers': storage.flat_list()})
 
 
 @app.route('/api/storage/units', methods=['POST'])

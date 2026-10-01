@@ -39,6 +39,48 @@ class StorageError(Exception):
     """A rejected operation, with a message meant for the user."""
 
 
+# Canonical schema for the container tree. migrate_containers imports this so
+# there is one definition, and ensure_schema() runs it on startup so a fresh
+# install (a new Pi, a test database) comes up with the tables present.
+DDL = '''
+CREATE TABLE IF NOT EXISTS storage_units (
+    id              INTEGER PRIMARY KEY,
+    name            TEXT NOT NULL,
+    kind            TEXT NOT NULL DEFAULT 'fridge',
+    room            TEXT,
+    default_temp_c  REAL,
+    notes           TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS storage_containers (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    unit_id     INTEGER NOT NULL,
+    parent_id   INTEGER,
+    kind        TEXT NOT NULL,
+    label       TEXT NOT NULL,
+    temp_c      REAL,
+    owner_lab   TEXT,
+    grid_rows   INTEGER,
+    grid_cols   INTEGER,
+    pos_row     INTEGER DEFAULT 0,
+    pos_col     INTEGER DEFAULT 0,
+    row_span    INTEGER DEFAULT 1,
+    col_span    INTEGER DEFAULT 1,
+    depth_index INTEGER DEFAULT 0,
+    color       TEXT,
+    legacy_zone_id INTEGER,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (unit_id)   REFERENCES storage_units(id)      ON DELETE CASCADE,
+    FOREIGN KEY (parent_id) REFERENCES storage_containers(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_containers_parent ON storage_containers(parent_id);
+CREATE INDEX IF NOT EXISTS idx_containers_unit   ON storage_containers(unit_id);
+CREATE INDEX IF NOT EXISTS idx_containers_legacy ON storage_containers(legacy_zone_id);
+'''
+
+
 class StorageTree:
     def __init__(self, db_path=DEFAULT_DB):
         self.db_path = str(db_path)
@@ -62,6 +104,26 @@ class StorageTree:
             raise
         finally:
             conn.close()
+
+    def ensure_schema(self):
+        """Create the container tables and the item container_id columns.
+
+        Idempotent, and safe to call on every startup. Without this a fresh
+        database (new install, or a test fixture) has no storage tables and
+        no container_id to write locations into.
+        """
+        with self._conn() as c:
+            c.executescript(DDL)
+            for table, _ in ITEM_TABLES:
+                exists = c.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                    (table,)).fetchone()
+                if not exists:
+                    continue
+                cols = [r[1] for r in c.execute(f'PRAGMA table_info({table})')]
+                if 'container_id' not in cols:
+                    c.execute(f'ALTER TABLE {table} ADD COLUMN container_id INTEGER')
+        return self
 
     # ---------------------------------------------------------------- units
 
@@ -342,6 +404,39 @@ class StorageTree:
             u['item_count'] = sum(r['subtree_item_count'] for r in u['containers'])
             u['container_count'] = sum(1 for r in rows if r['unit_id'] == u['id'])
             out.append(u)
+        return out
+
+    def flat_list(self):
+        """Every container with its full path precomputed.
+
+        One request serves both the location picker and the Location column in
+        the records table, instead of a path lookup per row.
+        """
+        out = []
+        for unit in self.get_tree():
+            def walk(node, prefix):
+                here = prefix + [node['label']]
+                out.append({
+                    'id': node['id'],
+                    'unit_id': unit['id'],
+                    'unit_name': unit['name'],
+                    'kind': node['kind'],
+                    'label': node['label'],
+                    'path': ' > '.join(here),
+                    'full_path': f"{unit['name']} > {' > '.join(here)}",
+                    'depth': len(here) - 1,
+                    'temp_c': node['temp_c'] if node['temp_c'] is not None
+                              else unit['default_temp_c'],
+                    'temp_is_override': node['temp_c'] is not None,
+                    'owner_lab': node['owner_lab'],
+                    'item_count': node['item_count'],
+                    'subtree_item_count': node['subtree_item_count'],
+                    'child_count': node['child_count'],
+                })
+                for child in node['children']:
+                    walk(child, here)
+            for root in unit['containers']:
+                walk(root, [])
         return out
 
     def path(self, container_id):

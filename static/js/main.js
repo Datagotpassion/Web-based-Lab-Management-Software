@@ -2,8 +2,9 @@
 
 let allRecords = [];
 let currentEditingId = null;
-let zoneCache = {}; // Cache zone data for display
-let allFridges = []; // Cache fridge data
+let allUnits = [];        // storage units with their nested containers
+let containerIndex = {};  // container id -> {label, path, full_path, temp_c, ...}
+let containerList = [];   // the same containers, flat and in tree order
 
 // Initialize on page load
 $(document).ready(function() {
@@ -18,29 +19,37 @@ $(document).ready(function() {
         filterRecords();
     });
 
-    // Handle storage temperature change to load appropriate zones
+    // Re-rank the location picker when the storage temperature changes, so
+    // matching-temperature containers float to the top.
     $('#storageTemp').on('change', function() {
-        loadZonesForTemperature();
+        populateLocationPicker($('#fridgeZone').val());
     });
 });
 
-// Load fridges first, then initialize other components
+// Load the storage structure first; records and the picker both depend on it.
 function loadFridgesAndInitialize() {
-    fetch('/api/fridges')
+    fetch('/api/storage/flat')
         .then(response => response.json())
-        .then(fridges => {
-            allFridges = fridges;
+        .then(data => {
+            containerList = data.containers || [];
+            containerIndex = {};
+            containerList.forEach(ct => { containerIndex[ct.id] = ct; });
+            allUnits = [];
+            containerList.forEach(ct => {
+                if (!allUnits.some(u => u.id === ct.unit_id)) {
+                    allUnits.push({id: ct.unit_id, name: ct.unit_name,
+                                   temp_c: ct.temp_is_override ? null : ct.temp_c});
+                }
+            });
             populateTemperatureFilter();
+            populateLocationPicker();
             loadRecords();
-            loadFridgeDisplays();
-            loadAllZones();
+            loadStructureOverview();
         })
         .catch(error => {
-            console.error('Error loading fridges:', error);
-            // Fallback to default behavior
+            console.error('Error loading storage structure:', error);
+            // Records are still useful without locations resolved.
             loadRecords();
-            loadFridgeDisplays();
-            loadAllZones();
         });
 }
 
@@ -49,8 +58,14 @@ function populateTemperatureFilter() {
     const tempFilter = $('#tempFilter');
     const storageTemp = $('#storageTemp');
 
-    // Get unique temp types
-    const tempTypes = [...new Set(allFridges.map(f => f.temp_type))];
+    // Derive the temperature list from what the storage structure actually
+    // contains, rather than from a fixed list. drugs.storage_temp stores keys
+    // like '-80C', so numeric container temperatures are converted to match.
+    const tempTypes = [...new Set(
+        containerList
+            .filter(ct => ct.temp_c !== null && ct.temp_c !== undefined)
+            .map(ct => `${+ct.temp_c}C`)
+    )].sort((a, b) => parseFloat(b) - parseFloat(a));
 
     // Update filter dropdown (if it exists)
     if (tempFilter.length) {
@@ -99,144 +114,76 @@ function sanitizeIdKey(tempKey) {
     return tempKey.replace(/-/g, 'm');
 }
 
-// Load all zones into cache for display purposes
-function loadAllZones() {
-    // Get unique temp types from fridges
-    const temps = [...new Set(allFridges.map(f => f.temp_type))];
-    const sections = ['body', 'door'];
-    let pendingRequests = 0;
-    let completedRequests = 0;
-
-    temps.forEach(temp => {
-        // Check if any fridge of this temp has door storage
-        const hasDoor = allFridges.some(f => f.temp_type === temp && f.has_door);
-
-        sections.forEach(section => {
-            if (section === 'door' && !hasDoor) return; // Skip door if no fridge has it
-            pendingRequests++;
-
-            fetch(`/api/schematic/${temp}/${section}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.zones) {
-                        data.zones.forEach(zone => {
-                            zoneCache[zone.id] = {
-                                name: zone.zone_name,
-                                temp: temp,
-                                section: section
-                            };
-                        });
-                    }
-                    completedRequests++;
-                    // Re-render records once all zones are loaded
-                    if (completedRequests === pendingRequests && allRecords.length > 0) {
-                        displayRecords(allRecords);
-                    }
-                })
-                .catch(error => {
-                    console.error(`Error loading zones for ${temp}/${section}:`, error);
-                    completedRequests++;
-                });
-        });
-    });
+// Indent an option label so nesting is visible inside a flat <select>.
+function containerOptionLabel(ct) {
+    const indent = '  '.repeat(ct.depth);
+    const bits = [ct.label];
+    if (ct.temp_is_override) bits.push(`${+ct.temp_c} °C`);
+    if (ct.owner_lab) bits.push(ct.owner_lab);
+    if (ct.item_count) bits.push(`${ct.item_count} item${ct.item_count === 1 ? '' : 's'}`);
+    return `${indent}${bits.join('  ·  ')}`;
 }
 
-// Load zones for the selected temperature (fetches from all fridges of that temp type)
-function loadZonesForTemperature() {
+// Populate the location picker from the container tree.
+//
+// Every container is selectable at any depth, so you can say "Shelf 2" when
+// that is all you know and refine to a box later. Containers whose temperature
+// matches the selected storage temperature are grouped first, but nothing is
+// hidden -- a -20 °C compartment inside a 4 °C fridge has to stay reachable.
+function populateLocationPicker(selectedId) {
+    const picker = $('#fridgeZone');
+    const hint = $('#zoneHint');
+    if (!picker.length) return;
+
+    if (!containerList.length) {
+        picker.html('<option value="">No storage structure defined</option>');
+        hint.html('Build your fridges in <a href="/storage-editor">Structure</a>');
+        return;
+    }
+
     const temp = $('#storageTemp').val();
-    const zoneSelect = $('#fridgeZone');
-    const zoneHint = $('#zoneHint');
+    const wanted = temp ? parseFloat(temp) : null;
+    const matches = ct => wanted !== null && ct.temp_c !== null
+                          && Math.abs(+ct.temp_c - wanted) < 0.001;
 
-    if (!temp || temp === 'RT') {
-        zoneSelect.html('<option value="">No zones for RT</option>');
-        zoneHint.text('Room temperature items do not have fridge zones');
-        return;
+    let options = '<option value="">No location set</option>';
+
+    const groupFor = (unitId, list, suffix) => {
+        if (!list.length) return '';
+        const unitName = list[0].unit_name;
+        let html = `<optgroup label="${escapeHtml(unitName)}${suffix}">`;
+        list.forEach(ct => {
+            html += `<option value="${ct.id}">`
+                  + `${escapeHtml(containerOptionLabel(ct))}</option>`;
+        });
+        return html + '</optgroup>';
+    };
+
+    const unitIds = [...new Set(containerList.map(ct => ct.unit_id))];
+
+    // Matching temperature first.
+    if (wanted !== null) {
+        unitIds.forEach(uid => {
+            options += groupFor(uid,
+                containerList.filter(ct => ct.unit_id === uid && matches(ct)),
+                ` — ${formatTempLabel(temp)}`);
+        });
     }
-
-    zoneSelect.html('<option value="">Loading zones...</option>');
-    zoneHint.text('');
-
-    // Get all fridges of this temperature type
-    const fridgesOfTemp = allFridges.filter(f => f.temp_type === temp);
-
-    if (fridgesOfTemp.length === 0) {
-        zoneSelect.html('<option value="">No fridges configured</option>');
-        zoneHint.html('Add fridges in Settings');
-        return;
-    }
-
-    // Build list of all fridge/section combinations to fetch
-    let fetchList = [];
-    fridgesOfTemp.forEach(fridge => {
-        fetchList.push({ fridge: fridge, section: 'body' });
-        if (fridge.has_door) {
-            fetchList.push({ fridge: fridge, section: 'door' });
-        }
+    // Then everything else.
+    unitIds.forEach(uid => {
+        options += groupFor(uid,
+            containerList.filter(ct => ct.unit_id === uid && !matches(ct)),
+            wanted !== null ? ' — other temperatures' : '');
     });
 
-    let allZones = [];
-    let completed = 0;
+    picker.html(options);
+    if (selectedId) picker.val(String(selectedId));
+    hint.html('Pick any level — a shelf, a rack, or a box. '
+            + 'Manage the structure in <a href="/storage-editor">Structure</a>.');
+}
 
-    fetchList.forEach(item => {
-        fetch(`/api/schematic/fridge/${item.fridge.id}/${item.section}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.zones && data.zones.length > 0) {
-                    data.zones.forEach(zone => {
-                        allZones.push({
-                            id: zone.id,
-                            name: zone.zone_name,
-                            section: item.section,
-                            fridgeId: item.fridge.id,
-                            fridgeName: item.fridge.name
-                        });
-                    });
-                }
-                completed++;
-
-                if (completed === fetchList.length) {
-                    // All fetches complete, populate select
-                    if (allZones.length === 0) {
-                        zoneSelect.html('<option value="">No zones configured</option>');
-                        zoneHint.html('Configure zones in <a href="/schematic-layout-builder">Layout Builder</a>');
-                    } else {
-                        let options = '<option value="">Select a zone...</option>';
-
-                        // Group by fridge, then by section
-                        fridgesOfTemp.forEach(fridge => {
-                            const fridgeZones = allZones.filter(z => z.fridgeId === fridge.id);
-                            if (fridgeZones.length > 0) {
-                                const bodyZones = fridgeZones.filter(z => z.section === 'body');
-                                const doorZones = fridgeZones.filter(z => z.section === 'door');
-
-                                if (bodyZones.length > 0) {
-                                    options += `<optgroup label="${fridge.name} - Body">`;
-                                    bodyZones.forEach(z => {
-                                        options += `<option value="${z.id}">${z.name}</option>`;
-                                    });
-                                    options += '</optgroup>';
-                                }
-
-                                if (doorZones.length > 0) {
-                                    options += `<optgroup label="${fridge.name} - Door">`;
-                                    doorZones.forEach(z => {
-                                        options += `<option value="${z.id}">${z.name}</option>`;
-                                    });
-                                    options += '</optgroup>';
-                                }
-                            }
-                        });
-
-                        zoneSelect.html(options);
-                        zoneHint.text('');
-                    }
-                }
-            })
-            .catch(error => {
-                console.error(`Error loading zones for fridge ${item.fridge.id}/${item.section}:`, error);
-                completed++;
-            });
-    });
+function escapeHtml(s) {
+    return $('<div>').text(s == null ? '' : s).html();
 }
 
 // Load all records
@@ -377,7 +324,7 @@ function deleteSelectedRecords() {
 // Finish bulk delete operation
 function finishBulkDelete(total, failed) {
     loadRecords();
-    loadFridgeDisplays();
+    loadStructureOverview();
 
     const success = total - failed;
     if (failed === 0) {
@@ -400,18 +347,22 @@ function getTempBadge(temp) {
     return badges[temp] || `<span class="badge bg-secondary">${temp}</span>`;
 }
 
-// Get location display string
+// Get location display string from the container tree.
+// Shows the immediate container, with the full path on hover, so a deep
+// location stays readable in a narrow table column.
 function getLocationDisplay(record) {
-    // Check for new zone-based location first
-    if (record.fridge_region_id && zoneCache[record.fridge_region_id]) {
-        const zone = zoneCache[record.fridge_region_id];
-        return `<span class="badge bg-info">${zone.name}</span>`;
+    const ct = record.container_id ? containerIndex[record.container_id] : null;
+    if (ct) {
+        return `<span class="badge bg-info" title="${escapeHtml(ct.full_path)}">`
+             + `${escapeHtml(ct.label)}</span>`;
     }
-    // Fallback to legacy row/column (for old records)
-    if (record.storage_section && record.storage_row !== null && record.storage_column !== null) {
-        return `${record.storage_section.charAt(0).toUpperCase()}${record.storage_section.slice(1)}: R${record.storage_row} C${record.storage_column}`;
+    if (record.container_id) {
+        // Points at a container that no longer exists -- surface it rather
+        // than rendering a silent dash.
+        return '<span class="badge bg-danger" '
+             + 'title="Points at a container that no longer exists">unknown</span>';
     }
-    return '-';
+    return '<span class="text-muted">—</span>';
 }
 
 // Filter records based on search and temperature
@@ -442,7 +393,7 @@ function showAddRecordModal() {
     $('#recordModalTitle').text('Add New Record');
     $('#recordForm')[0].reset();
     $('#recordId').val('');
-    loadZonesForTemperature(); // Load zones for default temperature
+    populateLocationPicker();
     $('#recordModal').modal('show');
 }
 
@@ -473,16 +424,9 @@ function editRecord(id) {
             $('#aliquotVolume').val(record.aliquot_volume || '');
             $('#notes').val(record.notes || '');
 
-            // Load zones for this temperature, then set the selected zone
-            const temp = record.storage_temp || '4C';
-            const zoneId = record.fridge_region_id;
-
-            // Load zones then set selection
-            loadZonesForTemperatureWithCallback(temp, function() {
-                if (zoneId) {
-                    $('#fridgeZone').val(zoneId);
-                }
-            });
+            // The picker is built from the already-loaded container index, so
+            // the current location can be selected straight away.
+            populateLocationPicker(record.container_id);
 
             $('#recordModal').modal('show');
         })
@@ -490,106 +434,6 @@ function editRecord(id) {
             console.error('Error loading record:', error);
             alert('Failed to load record');
         });
-}
-
-// Load zones with callback (for edit form) - fetches from all fridges of that temp type
-function loadZonesForTemperatureWithCallback(temp, callback) {
-    const zoneSelect = $('#fridgeZone');
-    const zoneHint = $('#zoneHint');
-
-    if (!temp || temp === 'RT') {
-        zoneSelect.html('<option value="">No zones for RT</option>');
-        zoneHint.text('Room temperature items do not have fridge zones');
-        if (callback) callback();
-        return;
-    }
-
-    zoneSelect.html('<option value="">Loading zones...</option>');
-    zoneHint.text('');
-
-    // Get all fridges of this temperature type
-    const fridgesOfTemp = allFridges.filter(f => f.temp_type === temp);
-
-    if (fridgesOfTemp.length === 0) {
-        zoneSelect.html('<option value="">No fridges configured</option>');
-        zoneHint.html('Add fridges in Settings');
-        if (callback) callback();
-        return;
-    }
-
-    // Build list of all fridge/section combinations to fetch
-    let fetchList = [];
-    fridgesOfTemp.forEach(fridge => {
-        fetchList.push({ fridge: fridge, section: 'body' });
-        if (fridge.has_door) {
-            fetchList.push({ fridge: fridge, section: 'door' });
-        }
-    });
-
-    let allZones = [];
-    let completed = 0;
-
-    fetchList.forEach(item => {
-        fetch(`/api/schematic/fridge/${item.fridge.id}/${item.section}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.zones && data.zones.length > 0) {
-                    data.zones.forEach(zone => {
-                        allZones.push({
-                            id: zone.id,
-                            name: zone.zone_name,
-                            section: item.section,
-                            fridgeId: item.fridge.id,
-                            fridgeName: item.fridge.name
-                        });
-                    });
-                }
-                completed++;
-
-                if (completed === fetchList.length) {
-                    if (allZones.length === 0) {
-                        zoneSelect.html('<option value="">No zones configured</option>');
-                        zoneHint.html('Configure zones in <a href="/schematic-layout-builder">Layout Builder</a>');
-                    } else {
-                        let options = '<option value="">Select a zone...</option>';
-
-                        // Group by fridge, then by section
-                        fridgesOfTemp.forEach(fridge => {
-                            const fridgeZones = allZones.filter(z => z.fridgeId === fridge.id);
-                            if (fridgeZones.length > 0) {
-                                const bodyZones = fridgeZones.filter(z => z.section === 'body');
-                                const doorZones = fridgeZones.filter(z => z.section === 'door');
-
-                                if (bodyZones.length > 0) {
-                                    options += `<optgroup label="${fridge.name} - Body">`;
-                                    bodyZones.forEach(z => {
-                                        options += `<option value="${z.id}">${z.name}</option>`;
-                                    });
-                                    options += '</optgroup>';
-                                }
-
-                                if (doorZones.length > 0) {
-                                    options += `<optgroup label="${fridge.name} - Door">`;
-                                    doorZones.forEach(z => {
-                                        options += `<option value="${z.id}">${z.name}</option>`;
-                                    });
-                                    options += '</optgroup>';
-                                }
-                            }
-                        });
-
-                        zoneSelect.html(options);
-                        zoneHint.text('');
-                    }
-                    if (callback) callback();
-                }
-            })
-            .catch(error => {
-                console.error(`Error loading zones for fridge ${item.fridge.id}/${item.section}:`, error);
-                completed++;
-                if (completed === fetchList.length && callback) callback();
-            });
-    });
 }
 
 // Save record (add or update)
@@ -602,7 +446,7 @@ function saveRecord() {
     }
 
     const storageTemp = $('#storageTemp').val();
-    const fridgeZoneId = $('#fridgeZone').val();
+    const containerId = $('#fridgeZone').val();
 
     const data = {
         drug_name: drugName,
@@ -620,7 +464,7 @@ function saveRecord() {
         sterility: $('#sterility').val() || null,
         lot_number: $('#lotNumber').val() || null,
         product_number: $('#productNumber').val() || null,
-        fridge_region_id: fridgeZoneId ? parseInt(fridgeZoneId) : null,
+        container_id: containerId ? parseInt(containerId) : null,
         aliquot_volume: $('#aliquotVolume').val() || null
     };
 
@@ -637,7 +481,7 @@ function saveRecord() {
         if (result.success) {
             $('#recordModal').modal('hide');
             loadRecords();
-            loadFridgeDisplays();
+            loadStructureOverview();
             alert(currentEditingId ? 'Record updated successfully' : 'Record added successfully');
         } else {
             alert('Error: ' + (result.error || 'Failed to save record'));
@@ -663,7 +507,7 @@ function deleteRecord(id, name) {
     .then(result => {
         if (result.success) {
             loadRecords();
-            loadFridgeDisplays();
+            loadStructureOverview();
             showDeleteNotification(itemName);
         } else {
             alert('Error: ' + (result.error || 'Failed to delete record'));
@@ -708,241 +552,197 @@ function showDeleteNotification(itemName) {
 // Refresh records
 function refreshRecords() {
     loadRecords();
-    loadFridgeDisplays();
+    loadStructureOverview();
 }
 
+// ===================== STORAGE STRUCTURE OVERVIEW =====================
+//
+// Replaces the old fridge grid/schematic visualisation. That drew a fixed
+// body/door grid per appliance, which could not show a shelf with three racks
+// or a unit with two door sections. This renders the actual container tree, so
+// what you see is whatever the hardware really is.
 
-// Load and display fridge schematic layouts
-function loadFridgeDisplays() {
-    const container = $('#fridgeDisplays');
-    container.empty();
+const OVERVIEW_COLLAPSED = new Set();   // container ids collapsed in the panel
+const OVERVIEW_AUTO_DEPTH = 2;          // deeper than this starts collapsed
 
-    if (allFridges.length === 0) {
-        container.html('<p class="text-muted text-center">No fridges configured. Go to Settings to add fridges.</p>');
+function loadStructureOverview() {
+    const host = $('#structureOverview');
+    if (!host.length) return;
+
+    // Always re-read, so counts stay honest after an add, edit or delete.
+    fetch('/api/storage/tree')
+        .then(r => r.json())
+        .then(data => renderStructureOverview(host, data.units || [],
+                                              data.unplaced || []))
+        .catch(error => {
+            console.error('Error loading storage structure:', error);
+            host.html('<p class="text-danger small mb-0">'
+                    + 'Could not load the storage structure.</p>');
+        });
+}
+
+function renderStructureOverview(host, units, unplaced) {
+    host.empty();
+
+    if (!units.length) {
+        host.html('<p class="text-muted text-center mb-2">'
+                + 'No storage units yet.</p>'
+                + '<div class="text-center"><a class="btn btn-sm btn-primary" '
+                + 'href="/storage-editor">Build your fridges</a></div>');
         return;
     }
 
-    // Display each fridge individually with its own layout
-    allFridges.forEach(fridge => {
-        const sections = fridge.has_door ? ['body', 'door'] : ['body'];
-        const safeId = `fridge-${fridge.id}`;
+    units.forEach(unit => {
+        const temp = unit.default_temp_c === null
+            ? '<span class="text-muted">mixed</span>'
+            : (+unit.default_temp_c) + ' &deg;C';
+        const room = unit.room ? ' &middot; ' + escapeHtml(unit.room) : '';
+        const $card = $('<div class="mb-3">'
+            + '<div class="d-flex justify-content-between align-items-baseline '
+            + 'border-bottom pb-1 mb-1">'
+            + '<div><span class="fw-semibold">' + escapeHtml(unit.name) + '</span> '
+            + '<span class="text-muted" style="font-size:.78rem">'
+            + temp + room + '</span></div>'
+            + '<span class="badge bg-light text-secondary">'
+            + unit.item_count + ' item' + (unit.item_count === 1 ? '' : 's')
+            + '</span></div><div class="overview-body"></div></div>');
 
-        // Build location display
-        let locationHtml = '';
-        if (fridge.location) {
-            locationHtml = `<small class="text-white-50">(${fridge.location})</small>`;
+        const $body = $card.find('.overview-body');
+        if (!unit.containers.length) {
+            $body.html('<div class="text-muted fst-italic" style="font-size:.8rem">'
+                     + 'Nothing defined inside yet.</div>');
+        } else {
+            unit.containers.forEach(ct => $body.append(overviewNode(ct, unit, 0)));
         }
-
-        // Create section placeholders to ensure body always comes before door
-        let sectionPlaceholders = `<div id="fridge-section-${safeId}-body"></div>`;
-        if (fridge.has_door) {
-            sectionPlaceholders += `<div id="fridge-section-${safeId}-door"></div>`;
-        }
-
-        const fridgeDiv = $(`
-            <div class="fridge-section mb-3" style="background: white; border-radius: 8px; overflow: hidden;">
-                <div class="p-2 text-white text-center" style="background: linear-gradient(135deg, ${getGradientColor(fridge.temp_type)});">
-                    <strong>${fridge.name}</strong> ${locationHtml}
-                    <div style="font-size: 0.75rem; opacity: 0.9;">${formatTempLabel(fridge.temp_type)}</div>
-                </div>
-                <div class="p-2" id="fridge-content-${safeId}">
-                    ${sectionPlaceholders}
-                </div>
-            </div>
-        `);
-        container.append(fridgeDiv);
-
-        // Load each section for this specific fridge
-        sections.forEach(section => {
-            loadSchematicSectionForFridge(fridge, section);
-        });
+        host.append($card);
     });
+
+    if (unplaced.length) {
+        host.append('<div class="alert alert-warning py-2 px-2 mb-0" '
+            + 'style="font-size:.8rem"><i class="bi bi-exclamation-triangle"></i> '
+            + '<strong>' + unplaced.length + '</strong> item'
+            + (unplaced.length === 1 ? '' : 's') + ' with no location. '
+            + '<a href="/storage-editor" class="alert-link">Place them</a></div>');
+    }
 }
 
-function getGradientColor(tempKey) {
-    const colors = {
-        '4C': '#3498db, #2980b9',
-        '-20C': '#f39c12, #d68910',
-        '-80C': '#9b59b6, #8e44ad',
-        'RT': '#27ae60, #1e8449',
-        '-196C': '#1abc9c, #16a085',  // Liquid nitrogen
-        '-150C': '#00bcd4, #0097a7'   // Cryo freezer
-    };
-    return colors[tempKey] || '#6c757d, #495057';
-}
+function overviewNode(ct, unit, depth) {
+    // Deep levels start collapsed so the panel stays scannable, but anything
+    // actually holding items is shown regardless.
+    if (depth >= OVERVIEW_AUTO_DEPTH && ct.child_count
+        && !OVERVIEW_COLLAPSED.has(ct.id) && !ct.item_count) {
+        OVERVIEW_COLLAPSED.add(ct.id);
+    }
+    const collapsed = OVERVIEW_COLLAPSED.has(ct.id);
+    const hasKids = ct.child_count > 0;
 
-function loadSchematicSectionForFridge(fridge, section) {
-    const safeId = `fridge-${fridge.id}`;
-    const sectionContainer = $(`#fridge-section-${safeId}-${section}`);
+    const chips = [];
+    if (ct.temp_c !== null)
+        chips.push('<span class="ov-chip">' + (+ct.temp_c) + ' &deg;C</span>');
+    if (ct.owner_lab)
+        chips.push('<span class="ov-chip">' + escapeHtml(ct.owner_lab) + '</span>');
 
-    fetch(`/api/schematic/fridge/${fridge.id}/${section}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.zones && data.zones.length > 0) {
-                renderSchematicZones(sectionContainer, fridge.temp_type, section, data);
-            } else {
-                // Show "no layout" message for this section
-                sectionContainer.html(`
-                    <div class="section-${section} mb-2">
-                        <small class="text-muted">${section.charAt(0).toUpperCase() + section.slice(1)}: </small>
-                        <a href="/schematic-layout-builder" class="text-primary small">Configure layout</a>
-                    </div>
-                `);
-            }
-        })
-        .catch(error => {
-            console.error(`Error loading schematic for fridge ${fridge.id}/${section}:`, error);
-        });
-}
-
-function loadSchematicSection(tempKey, section) {
-    fetch(`/api/schematic/${tempKey}/${section}`)
-        .then(response => response.json())
-        .then(data => {
-            const safeId = sanitizeIdKey(tempKey);
-            const contentDiv = $(`#fridge-content-${safeId}`);
-
-            if (data.zones && data.zones.length > 0) {
-                renderSchematicZones(contentDiv, tempKey, section, data);
-            } else {
-                // Show "no layout" message only if no zones exist for this section
-                if (contentDiv.find(`.section-${section}`).length === 0) {
-                    contentDiv.append(`
-                        <div class="section-${section} mb-2">
-                            <small class="text-muted">${section.charAt(0).toUpperCase() + section.slice(1)}: </small>
-                            <a href="/schematic-layout-builder" class="text-primary small">Configure layout</a>
-                        </div>
-                    `);
-                }
-            }
-        })
-        .catch(error => {
-            console.error(`Error loading schematic ${tempKey}/${section}:`, error);
-        });
-}
-
-function renderSchematicZones(contentDiv, tempKey, section, data) {
-    // Create occupancy map
-    const occupancyMap = {};
-    if (data.occupancy) {
-        data.occupancy.forEach(occ => {
-            occupancyMap[occ.id] = occ.item_count;
-        });
+    let count = '';
+    if (ct.item_count) {
+        count = '<span class="badge bg-success-subtle text-success-emphasis ov-count" '
+              + 'title="items directly here">' + ct.item_count + '</span>';
+    } else if (ct.subtree_item_count) {
+        count = '<span class="badge bg-light text-secondary ov-count" '
+              + 'title="items further inside">' + ct.subtree_item_count + '</span>';
     }
 
-    // Group zones by row
-    const rowMap = {};
-    data.zones.forEach(zone => {
-        if (!rowMap[zone.row_index]) {
-            rowMap[zone.row_index] = [];
-        }
-        rowMap[zone.row_index].push({
-            ...zone,
-            itemCount: occupancyMap[zone.id] || 0
-        });
-    });
+    const caret = hasKids
+        ? (collapsed ? '<i class="bi bi-caret-right-fill"></i>'
+                     : '<i class="bi bi-caret-down-fill"></i>')
+        : '';
 
-    // Build section HTML
-    const sectionDiv = $(`<div class="section-${section} mb-2"></div>`);
-    sectionDiv.append(`<small class="text-muted d-block mb-1">${section.charAt(0).toUpperCase() + section.slice(1)}:</small>`);
+    const kids = (hasKids && !collapsed)
+        ? '<div class="ov-children">'
+          + ct.children.map(k => overviewNode(k, unit, depth + 1)).join('')
+          + '</div>'
+        : '';
 
-    const zonesContainer = $('<div style="display: flex; flex-direction: column; gap: 3px;"></div>');
-
-    Object.keys(rowMap).sort((a, b) => a - b).forEach(rowIdx => {
-        const zones = rowMap[rowIdx].sort((a, b) => a.col_index - b.col_index);
-        const rowDiv = $('<div style="display: flex; gap: 3px;"></div>');
-
-        zones.forEach(zone => {
-            const itemCount = zone.itemCount;
-            let borderColor = '#bdc3c7';
-            let countColor = '#95a5a6';
-
-            if (itemCount > 0) {
-                borderColor = '#27ae60';
-                countColor = '#27ae60';
-            }
-            if (itemCount > 3) {
-                borderColor = '#e74c3c';
-                countColor = '#e74c3c';
-            }
-
-            const displayCount = itemCount > 0 ? itemCount : '-';
-
-            const zoneCell = $(`
-                <div class="zone-cell-home" style="
-                    flex: 1;
-                    padding: 5px 8px;
-                    border: 2px solid ${borderColor};
-                    border-radius: 5px;
-                    background-color: ${zone.color || '#f8f9fa'};
-                    text-align: center;
-                    cursor: pointer;
-                    transition: all 0.2s;
-                    min-width: 60px;
-                " data-zone-id="${zone.id}" data-zone-name="${zone.zone_name}">
-                    <div style="font-size: 0.75rem; font-weight: 600;">${zone.zone_name}</div>
-                    <div style="font-size: 0.9rem; font-weight: bold; color: ${countColor};">${displayCount}</div>
-                </div>
-            `);
-
-            zoneCell.on('click', function() {
-                showZoneItems(zone.id, zone.zone_name);
-            });
-
-            zoneCell.hover(
-                function() { $(this).css({'transform': 'translateY(-2px)', 'box-shadow': '0 3px 6px rgba(0,0,0,0.15)'}); },
-                function() { $(this).css({'transform': 'none', 'box-shadow': 'none'}); }
-            );
-
-            rowDiv.append(zoneCell);
-        });
-
-        zonesContainer.append(rowDiv);
-    });
-
-    sectionDiv.append(zonesContainer);
-    contentDiv.append(sectionDiv);
+    return '<div class="ov-node-wrap"><div class="ov-node" data-ov="' + ct.id + '">'
+         + '<span class="ov-toggle" data-ov-toggle="' + ct.id + '">' + caret + '</span>'
+         + '<span class="ov-label' + (ct.item_count ? ' fw-semibold' : '') + '" '
+         + 'data-ov-items="' + ct.id + '" '
+         + 'title="' + escapeHtml(ct.kind) + ' - click to see contents">'
+         + escapeHtml(ct.label) + '</span>'
+         + chips.join('') + count
+         + '</div>' + kids + '</div>';
 }
 
-// Show items in a schematic zone
-function showZoneItems(zoneId, zoneName) {
-    fetch(`/api/schematic/zone/${zoneId}/items`)
-        .then(response => response.json())
-        .then(items => {
-            const modalTitle = $('#locationModalTitle');
-            const modalBody = $('#locationItemsList');
+// Expand/collapse a branch of the overview.
+$(document).on('click', '.ov-toggle', function (e) {
+    e.stopPropagation();
+    const id = +$(this).data('ov-toggle');
+    if (!id) return;
+    if (OVERVIEW_COLLAPSED.has(id)) OVERVIEW_COLLAPSED.delete(id);
+    else OVERVIEW_COLLAPSED.add(id);
+    loadStructureOverview();
+});
 
-            modalTitle.text(`Items in: ${zoneName}`);
-            modalBody.empty();
-
-            if (items.length === 0) {
-                modalBody.html('<p class="text-muted">No items in this zone</p>');
-            } else {
-                const list = $('<ul class="list-group"></ul>');
-                items.forEach(item => {
-                    const listItem = $(`
-                        <li class="list-group-item">
-                            <strong>${item.drug_name}</strong><br>
-                            <small>
-                                Concentration: ${item.stock_concentration || '-'} ${item.stock_unit || ''}<br>
-                                Supplier: ${item.supplier || '-'}<br>
-                                ${item.aliquot_volume ? `Aliquot: ${item.aliquot_volume}<br>` : ''}
-                                Prep Date: ${item.preparation_date || '-'}
-                            </small><br>
-                            <button class="btn btn-sm btn-primary mt-2" onclick="editRecord(${item.id}); $('#locationModal').modal('hide');">
-                                <i class="bi bi-pencil"></i> Edit
-                            </button>
-                        </li>
-                    `);
-                    list.append(listItem);
-                });
-                modalBody.append(list);
-            }
-
-            $('#locationModal').modal('show');
-        })
+// Click a container to see what is in it, including everything nested inside.
+$(document).on('click', '.ov-label', function () {
+    const id = +$(this).data('ov-items');
+    fetch('/api/storage/containers/' + id + '/items?deep=1')
+        .then(r => r.json())
+        .then(data => showContainerItems(data))
         .catch(error => {
-            console.error('Error loading zone items:', error);
-            alert('Failed to load items');
+            console.error('Error loading container items:', error);
+            alert('Failed to load contents');
         });
+});
+
+function showContainerItems(data) {
+    const path = data.path;
+    const where = path.unit.name + ' › '
+                + path.containers.map(p => p.label).join(' › ');
+    $('#locationModalTitle').text(where);
+
+    if (!data.items.length) {
+        $('#locationItemsList').html(
+            '<p class="text-muted mb-0">Nothing stored here.</p>');
+        $('#locationModal').modal('show');
+        return;
+    }
+
+    // Group by the container each item actually sits in, so a rack's listing
+    // still tells you which box things are in.
+    const groups = {};
+    data.items.forEach(it => {
+        if (!groups[it.container_id]) groups[it.container_id] = [];
+        groups[it.container_id].push(it);
+    });
+
+    let html = '';
+    Object.keys(groups).forEach(cid => {
+        const ct = containerIndex[cid];
+        const label = ct ? ct.path : 'Unknown container';
+        html += '<div class="fw-semibold small text-muted mt-2">'
+              + escapeHtml(label) + '</div><ul class="list-unstyled mb-0">';
+        groups[cid].forEach(it => {
+            const kind = it.table === 'drugs' ? 'reagent'
+                       : it.table.replace('_', ' ');
+            const edit = it.table === 'drugs'
+                ? '<button class="btn btn-sm btn-outline-primary ms-2" '
+                  + 'data-edit-record="' + it.id + '">Edit</button>'
+                : '';
+            html += '<li class="d-flex align-items-center py-1">'
+                  + '<span>' + escapeHtml(it.name) + '</span>'
+                  + '<span class="badge bg-light text-secondary ms-2" '
+                  + 'style="font-size:.68rem">' + escapeHtml(kind) + '</span>'
+                  + edit + '</li>';
+        });
+        html += '</ul>';
+    });
+    $('#locationItemsList').html(html);
+    $('#locationModal').modal('show');
 }
+
+// Edit straight from the contents list.
+$(document).on('click', '[data-edit-record]', function () {
+    const id = +$(this).data('edit-record');
+    $('#locationModal').modal('hide');
+    editRecord(id);
+});

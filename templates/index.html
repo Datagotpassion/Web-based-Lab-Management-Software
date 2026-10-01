@@ -2,6 +2,27 @@
 
 {% block title %}Lab Management System - Home{% endblock %}
 
+{% block extra_css %}
+<style>
+    /* Storage structure overview (right-hand panel) */
+    #structureOverview { font-size: .85rem; }
+    .ov-node { display: flex; align-items: center; gap: .35rem;
+               padding: .12rem .2rem; border-radius: .25rem; }
+    .ov-node:hover { background: #f1f3f5; }
+    .ov-children { margin-left: .9rem; padding-left: .55rem;
+                   border-left: 1px solid #e9ecef; }
+    .ov-toggle { width: .8rem; text-align: center; cursor: pointer;
+                 color: #adb5bd; user-select: none; flex: none; }
+    .ov-toggle:hover { color: #495057; }
+    .ov-label { cursor: pointer; }
+    .ov-label:hover { text-decoration: underline; }
+    .ov-chip { font-size: .68rem; color: #6c757d; background: #f8f9fa;
+               border: 1px solid #e9ecef; border-radius: .6rem;
+               padding: 0 .35rem; white-space: nowrap; }
+    .ov-count { font-size: .68rem; margin-left: auto; flex: none; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="row">
     <!-- Left Column - Record Management -->
@@ -66,15 +87,19 @@
         </div>
     </div>
 
-    <!-- Right Column - Fridge Visualization -->
+    <!-- Right Column - Storage Structure -->
     <div class="col-lg-5">
         <div class="card">
-            <div class="card-header">
-                <i class="bi bi-snow"></i> Fridge Storage Visualization
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-diagram-3"></i> Storage Structure</span>
+                <a href="/storage-editor" class="btn btn-sm btn-outline-light"
+                   title="Add, remove or rearrange containers">
+                    <i class="bi bi-pencil-square"></i> Edit
+                </a>
             </div>
-            <div class="card-body">
-                <div id="fridgeDisplays">
-                    <!-- Fridge grids will be loaded here via JavaScript -->
+            <div class="card-body" style="max-height: 640px; overflow-y: auto;">
+                <div id="structureOverview">
+                    <!-- Container tree rendered by loadStructureOverview() -->
                 </div>
             </div>
         </div>
