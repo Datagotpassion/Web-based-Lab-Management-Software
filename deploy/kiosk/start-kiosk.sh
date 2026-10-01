@@ -82,6 +82,20 @@ BROWSER=$(command -v chromium-browser || command -v chromium) || {
     exit 1
 }
 
+# Retire any previous kiosk instance, then clear the profile lock.
+#
+# Chromium's lock records hostname and PID. A hard power cut leaves one naming
+# a dead PID, and renaming the machine leaves one naming a host that no longer
+# exists; either way Chromium refuses to start and shows a zenity "profile in
+# use" dialog, which on a kiosk sits invisible behind the desktop and just
+# looks like a hang. This profile belongs solely to the kiosk, so once any
+# live instance is gone the lock is meaningless.
+#
+# Matched on the profile path so only the kiosk's own browser is touched, not
+# a Chromium someone opened by hand.
+pkill -f "user-data-dir=$PROFILE" 2>/dev/null && sleep 2
+rm -f "$PROFILE/SingletonLock" "$PROFILE/SingletonCookie" "$PROFILE/SingletonSocket"
+
 # A stale "Chromium didn't shut down correctly" bar makes the kiosk look broken
 # after a power cut, so clear the exit flags before each launch.
 PREFS="$PROFILE/Default/Preferences"
