@@ -85,6 +85,10 @@
            justify-content: center; padding: 3px; overflow: hidden; }
     .pos.filled { background: #1b3a2c; border-color: #2f7d58; cursor: pointer; }
     .pos.filled:active { background: #27543d; }
+    /* A position that exists but holds nothing: present, clearly not the
+       thing you are looking for. */
+    .pos.vacant { background: #16222e; border-color: #2a4a3a; }
+    .pos.vacant .n { color: #5d7a6b; }
     .pos .n { font-size: 1.02rem; font-weight: 800; color: #6b7f94; }
     .pos.filled .n { color: #9fe3bf; }
     .pos .c { font-size: .68rem; color: #5fd0a0; font-weight: 700; }
@@ -100,6 +104,9 @@
     }
     .map-rack.target { border-color: #ffc107; border-width: 4px;
                        background: #4b3a00; animation: pulse 1.15s ease-in-out infinite; }
+    /* The shelf holding the target, so the right row reads before the rack. */
+    .map-row.row-target .map-shelf { color: #ffc107; font-size: .86rem; }
+    .map-row.row-target { background: rgba(255,193,7,.07); border-radius: 8px; }
 
     /* Banner naming what is being located, above the lit position. */
     .finding { flex: 0 0 auto; background: #4b3a00; border: 2px solid #ffc107;
@@ -113,6 +120,11 @@
 
     .empty-note { color: #6b7f94; text-align: center; padding: 26px 0;
                   font-size: .95rem; }
+    .addr { flex: 0 0 auto; text-align: right; font-size: .78rem;
+            color: #5b708a; font-family: ui-monospace, Consolas, monospace;
+            letter-spacing: .02em; padding-top: 6px; }
+    .addr b { color: #6fb1ef; font-weight: 700; }
+    .addr .stale { color: #d08b44; }
     .pager { font-size: .9rem; color: #7f93a8; display: flex;
              align-items: center; justify-content: center; flex: 0 0 120px; }
 </style>
@@ -136,6 +148,8 @@
                 <div class="hint">shelves and racks</div>
             </div>
         </div>
+        <!-- Its own address, so nobody has to hunt for it after DHCP moves it. -->
+        <div class="addr" id="addrLine">&nbsp;</div>
     </div>
 
     <div class="screen" id="scFind">
@@ -151,7 +165,7 @@
     <div class="screen" id="scMap">
         <div class="finding" id="mapFinding">
             <span class="what" id="mapFindingWhat"></span>
-            <span class="ctx">highlighted below</span>
+            <span class="ctx" id="mapFindingCtx"></span>
         </div>
         <div class="map" id="mapGrid"></div>
         <div class="k-foot"><div class="k-btn wide" data-back="home">&larr; Back</div></div>
@@ -188,6 +202,8 @@ const PER_PAGE = 8;                 // 4 rows x 2 columns, fits without scrollin
 let CONTAINERS = [], BY_ID = {}, ITEMS = [], UNIT = null;
 let CUR_RACK = null, TARGET = null, RACK_FROM = 'map';
 let PAGES = {find: 0, pos: 0}, POS_ITEMS = [];
+// What is currently being located, carried from shelf to rack to position.
+let FINDING = null;
 
 const esc = s => { const d = document.createElement('div');
                    d.textContent = s == null ? '' : s; return d.innerHTML; };
@@ -201,10 +217,12 @@ function show(id) {
 }
 
 async function boot() {
-    const [flat, placeable] = await Promise.all([
+    const [flat, placeable, health] = await Promise.all([
         fetch('/api/storage/flat').then(r => r.json()),
         fetch('/api/storage/placeable').then(r => r.json()),
+        fetch('/api/health').then(r => r.json()).catch(() => null),
     ]);
+    renderAddress(health);
     CONTAINERS = flat.containers;
     BY_ID = {};
     CONTAINERS.forEach(c => { BY_ID[c.id] = c; });
@@ -224,6 +242,22 @@ async function boot() {
     $('#headSub').textContent = `${ITEMS.length} reagents`;
     renderFind();
     renderMap();
+}
+
+// This machine's own address, read from the server each refresh so it follows
+// DHCP rather than needing anyone to ping for it.
+function renderAddress(health) {
+    const el = $('#addrLine');
+    if (!health || !health.address) { el.innerHTML = '&nbsp;'; return; }
+    const url = `${health.address}:${health.port}`;
+    const name = health.hostname ? `${health.hostname}.local:${health.port}` : '';
+    // How stale the replica is, since this panel shows a copy.
+    let age = '';
+    if (health.database_mtime) {
+        const mins = Math.round((Date.now() - new Date(health.database_mtime)) / 60000);
+        if (mins >= 10) age = ` <span class="stale">· data ${mins} min old</span>`;
+    }
+    el.innerHTML = `<b>${esc(url)}</b>${name ? ' · ' + esc(name) : ''}${age}`;
 }
 
 function childrenOf(id) {
@@ -285,7 +319,11 @@ function renderMap(targetRackId) {
     const sections = CONTAINERS.filter(c => c.unit_id === UNIT && c.depth === 0);
     const rows = [];
     sections.forEach(sec => childrenOf(sec.id).forEach(shelf => {
-        const cells = childrenOf(shelf.id).map(r => {
+        const racks = childrenOf(shelf.id);
+        // The shelf is lit too, so the eye lands on the right row before
+        // picking out the rack within it.
+        const shelfHit = racks.some(r => r.id === targetRackId);
+        const cells = racks.map(r => {
             const n = r.subtree_item_count || 0;
             const t = r.id === targetRackId ? ' target' : '';
             return `<div class="map-rack ${n ? '' : 'empty'}${t}" data-rack="${r.id}">
@@ -293,7 +331,7 @@ function renderMap(targetRackId) {
                       ${n ? `<span class="ct">${n}</span>` : ''}
                     </div>`;
         }).join('');
-        rows.push(`<div class="map-row">
+        rows.push(`<div class="map-row${shelfHit ? ' row-target' : ''}">
                      <div class="map-shelf">${esc(shelf.label)}</div>
                      ${cells || '<div class="map-rack empty">&mdash;</div>'}
                      <div class="map-door">DOOR</div>
@@ -337,10 +375,16 @@ function openRack(rackId, opts = {}) {
             const b = taken[`${r},${c}`];
             const n = r * cols + c + 1;
             const isTarget = b && b.id === TARGET;
+            // An occupied position states its count; an empty one just shows
+            // its number, so the eye goes straight to what actually holds
+            // something instead of reading "0 items" twelve times.
             html += b
-                ? `<div class="pos filled${isTarget ? ' target' : ''}" data-pos="${b.id}">
+                ? `<div class="pos filled${b.item_count ? '' : ' vacant'}${isTarget ? ' target' : ''}"
+                        data-pos="${b.id}">
                      <div class="n">${esc(b.label)}</div>
-                     <div class="c">${b.item_count} item${b.item_count === 1 ? '' : 's'}</div>
+                     ${b.item_count
+                        ? `<div class="c">${b.item_count} item${b.item_count === 1 ? '' : 's'}</div>`
+                        : ''}
                    </div>`
                 : `<div class="pos"><div class="n">${n}</div></div>`;
         }
@@ -411,31 +455,45 @@ document.addEventListener('click', ev => {
     }
 
     const rack = ev.target.closest('[data-rack]');
-    if (rack) { openRack(+rack.dataset.rack, {from: 'map'}); return; }
+    if (rack) {
+        const id = +rack.dataset.rack;
+        // Carry the search through: if this is the rack we were pointing at,
+        // open it with the position still lit.
+        const chasing = FINDING && FINDING.rackId === id;
+        openRack(id, chasing
+            ? {target: FINDING.posId, from: 'find', findingWhat: FINDING.name}
+            : {from: 'map'});
+        return;
+    }
 
     const pos = ev.target.closest('[data-pos]');
     if (pos) { openPos(+pos.dataset.pos); return; }
 
-    // Tapping a reagent shows where it is rather than spelling out an address:
-    // its rack opens with the position lit up.
+    // Tapping a reagent shows where it is rather than spelling out an address,
+    // and does it in the order you would physically look: which shelf, which
+    // rack, then which position. So the freezer map comes first with the rack
+    // lit; tapping through drills to the position, still lit.
     const item = ev.target.closest('[data-item]');
     if (item) {
         const it = ITEMS.find(i => i.id === +item.dataset.item);
         if (!it || !it.container_id) return;
         const holder = BY_ID[it.container_id];
         const rk = rackOf(it.container_id);
-        if (rk && holder && holder.kind === 'box') {
-            openRack(rk.id, {target: it.container_id, from: 'find',
-                             findingWhat: it.name});
-        } else if (rk) {
-            // Recorded only to rack level: light the rack on the map instead.
-            renderMap(rk.id);
-            $('#mapFinding').classList.add('show');
-            $('#mapFindingWhat').textContent =
-                `${it.name} — somewhere in rack ${rk.label}`;
-            $('#headSub').textContent = '';
-            show('Map');
-        }
+        if (!rk) return;
+
+        FINDING = {
+            name: it.name,
+            rackId: rk.id,
+            posId: (holder && holder.kind === 'box') ? it.container_id : null,
+        };
+        renderMap(rk.id);
+        $('#mapFinding').classList.add('show');
+        $('#mapFindingWhat').textContent = it.name;
+        $('#mapFindingCtx').textContent = FINDING.posId
+            ? `${rk.full_path.split(' > ').slice(2, -1).join(' · ')} — tap the lit rack`
+            : `somewhere in rack ${rk.label}`;
+        $('#headSub').textContent = '';
+        show('Map');
     }
 });
 
