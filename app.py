@@ -643,6 +643,16 @@ def api_health():
         return jsonify({'status': 'error', 'error': str(exc)}), 500
 
 
+@app.route('/freezer')
+def freezer_map():
+    """Spatial view of a storage unit: shelves, racks, and each rack's boxes.
+
+    The same page serves the desk and the freezer-side panel; READ_ONLY
+    removes the editing affordances.
+    """
+    return render_template('freezer.html')
+
+
 @app.route('/storage-editor')
 def storage_editor():
     """Editor for the physical structure of every storage unit."""
@@ -694,7 +704,9 @@ def api_create_container():
     return jsonify({'success': True, 'container': storage.create_container(
         unit_id=d.get('unit_id'), parent_id=d.get('parent_id'),
         kind=d.get('kind', 'shelf'), label=d.get('label'),
-        temp_c=d.get('temp_c'), owner_lab=d.get('owner_lab'))}), 201
+        temp_c=d.get('temp_c'), owner_lab=d.get('owner_lab'),
+        pos_row=d.get('pos_row'), pos_col=d.get('pos_col'),
+        grid_rows=d.get('grid_rows'), grid_cols=d.get('grid_cols'))}), 201
 
 
 @app.route('/api/storage/containers/bulk', methods=['POST'])

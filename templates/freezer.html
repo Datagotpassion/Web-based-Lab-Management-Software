@@ -1,0 +1,397 @@
+{% extends "base.html" %}
+
+{% block title %}Freezer Map{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ------------------------------------------------------------------
+       Spatial freezer view. Drawn to match the physical thing: shelves
+       stacked top to bottom, racks side by side across each shelf, and a
+       rack's boxes laid out in the grid the rack actually has.
+
+       The same markup serves the desk and the 7" panel; only sizes change.
+       ------------------------------------------------------------------ */
+
+    .fz-wrap { --slot: 44px; --gap: 6px; }
+
+    .fz-shelf-row { display: flex; align-items: stretch; gap: 10px;
+                    margin-bottom: 10px; }
+    .fz-shelf-label { flex: 0 0 72px; display: flex; align-items: center;
+                      justify-content: flex-end; padding-right: .5rem;
+                      font-weight: 600; color: #495057; font-size: .82rem;
+                      text-align: right; line-height: 1.1; }
+    .fz-racks { display: flex; gap: 10px; flex: 1 1 auto; flex-wrap: nowrap; }
+
+    /* A rack: a labelled frame containing its box-slot matrix. */
+    .fz-rack { border: 2px solid #ced4da; border-radius: 6px; background: #fff;
+               padding: .3rem; cursor: pointer; transition: border-color .12s,
+               box-shadow .12s; position: relative; }
+    .fz-rack:hover { border-color: #0d6efd; box-shadow: 0 0 0 3px rgba(13,110,253,.12); }
+    .fz-rack.is-empty { background: #f8f9fa; border-style: dashed; }
+    .fz-rack.selected { border-color: #0d6efd; box-shadow: 0 0 0 3px rgba(13,110,253,.25); }
+    .fz-rack-name { font-size: .72rem; font-weight: 700; color: #6c757d;
+                    text-align: center; margin-bottom: .2rem; letter-spacing: .04em; }
+    .fz-rack-count { position: absolute; top: -8px; right: -8px;
+                     background: #198754; color: #fff; border-radius: 10px;
+                     font-size: .66rem; padding: 0 .35rem; min-width: 18px;
+                     text-align: center; font-weight: 600; }
+
+    /* The box matrix inside a rack. */
+    .fz-grid { display: grid; gap: var(--gap); }
+    .fz-slot { width: var(--slot); height: var(--slot); border-radius: 4px;
+               border: 1px solid #dee2e6; background: #f1f3f5;
+               display: flex; align-items: center; justify-content: center;
+               font-size: .62rem; color: #adb5bd; overflow: hidden;
+               text-align: center; line-height: 1.05; padding: 1px; }
+    .fz-slot.filled { background: #d1e7dd; border-color: #198754; color: #0f5132;
+                      font-weight: 600; }
+    .fz-slot.has-items { background: #a3cfbb; }
+    .fz-slot.empty-slot { border-style: dashed; }
+
+    /* Detail panel */
+    .fz-detail { position: sticky; top: 1rem; }
+    .fz-detail-grid { display: grid; gap: 10px; justify-content: start; }
+    .fz-detail-slot { width: 96px; height: 76px; border-radius: 6px;
+                      border: 2px solid #dee2e6; background: #f8f9fa;
+                      padding: .3rem; cursor: pointer; display: flex;
+                      flex-direction: column; font-size: .72rem;
+                      transition: border-color .12s; }
+    .fz-detail-slot:hover { border-color: #0d6efd; }
+    .fz-detail-slot.filled { background: #fff; border-color: #198754; }
+    .fz-detail-slot.active { border-color: #0d6efd;
+                             box-shadow: 0 0 0 3px rgba(13,110,253,.2); }
+    .fz-detail-slot .bx-name { font-weight: 600; color: #212529;
+                               overflow: hidden; text-overflow: ellipsis;
+                               white-space: nowrap; }
+    .fz-detail-slot .bx-n { margin-top: auto; color: #6c757d; font-size: .68rem; }
+    .fz-detail-slot .bx-add { margin: auto; color: #adb5bd; font-size: 1.1rem; }
+
+    .fz-breadcrumb { font-size: .85rem; color: #6c757d; }
+    .fz-breadcrumb b { color: #212529; }
+    .readonly-note { font-size: .78rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="mb-0" id="unitTitle">Freezer Map</h4>
+        <small class="text-muted">
+            Laid out as the freezer actually is &mdash; shelves top to bottom,
+            racks across, boxes in each rack's own grid.
+        </small>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
+        <select class="form-select form-select-sm" id="unitPicker" style="width:auto"></select>
+        {% if not read_only %}
+        <a href="/storage-editor" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-diagram-3"></i> Tree editor
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+{% if read_only %}
+<div class="alert alert-secondary py-2 readonly-note mb-3">
+    <i class="bi bi-eye"></i>
+    Read-only display. This is a copy of the lab PC database; add or edit
+    records there.
+</div>
+{% endif %}
+
+<div class="row g-3">
+    <div class="col-xl-7">
+        <div class="card">
+            <div class="card-header py-2 fw-semibold">
+                <i class="bi bi-grid-3x3"></i> Front view
+            </div>
+            <div class="card-body fz-wrap" id="freezerMap">
+                <div class="text-muted">Loading&hellip;</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-5">
+        <div class="card fz-detail" id="detailCard" style="display:none">
+            <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                <span class="fw-semibold" id="detailTitle"></span>
+                <button class="btn-close btn-sm" id="detailClose"></button>
+            </div>
+            <div class="card-body">
+                <div class="fz-breadcrumb mb-2" id="detailPath"></div>
+                <div class="fz-detail-grid mb-3" id="detailGrid"></div>
+                <hr class="my-2">
+                <div id="boxContents">
+                    <div class="text-muted small">Pick a box to see what is in it.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const READ_ONLY = {{ 'true' if read_only else 'false' }};
+let UNITS = [], CONTAINERS = [], BY_ID = {};
+let SELECTED_RACK = null, SELECTED_BOX = null;
+
+const esc = s => $('<div>').text(s == null ? '' : s).html();
+
+function api(url, opts = {}) {
+    return fetch(url, {headers: {'Content-Type': 'application/json'}, ...opts})
+        .then(async r => {
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`);
+            return d;
+        });
+}
+
+function load(keepSelection = true) {
+    return api('/api/storage/flat').then(d => {
+        CONTAINERS = d.containers;
+        BY_ID = {};
+        CONTAINERS.forEach(c => { BY_ID[c.id] = c; });
+
+        UNITS = [];
+        CONTAINERS.forEach(c => {
+            if (!UNITS.some(u => u.id === c.unit_id))
+                UNITS.push({id: c.unit_id, name: c.unit_name});
+        });
+        renderUnitPicker();
+        renderMap();
+        if (keepSelection && SELECTED_RACK && BY_ID[SELECTED_RACK]) {
+            openRack(SELECTED_RACK, false);
+        }
+    }).catch(e => $('#freezerMap').html(
+        `<div class="text-danger">${esc(e.message)}</div>`));
+}
+
+function currentUnitId() {
+    const v = $('#unitPicker').val();
+    return v ? +v : (UNITS[0] || {}).id;
+}
+
+function renderUnitPicker() {
+    const sel = $('#unitPicker');
+    if (sel.children().length) return;          // keep the user's choice
+    // Default to the coldest unit, which is the -80 and the point of this page.
+    const sorted = [...UNITS].sort((a, b) => {
+        const ta = (CONTAINERS.find(c => c.unit_id === a.id) || {}).temp_c ?? 0;
+        const tb = (CONTAINERS.find(c => c.unit_id === b.id) || {}).temp_c ?? 0;
+        return ta - tb;
+    });
+    sorted.forEach(u => sel.append(`<option value="${u.id}">${esc(u.name)}</option>`));
+}
+
+function childrenOf(id) {
+    return CONTAINERS.filter(c => {
+        const parent = CONTAINERS.find(p => p.id === id);
+        if (!parent) return false;
+        // flat_list has no parent_id, so match on path prefix + depth.
+        return c.depth === parent.depth + 1 &&
+               c.full_path.startsWith(parent.full_path + ' > ');
+    }).sort((a, b) => (a.pos_row - b.pos_row) || (a.pos_col - b.pos_col));
+}
+
+function rootsOf(unitId) {
+    return CONTAINERS.filter(c => c.unit_id === unitId && c.depth === 0)
+                     .sort((a, b) => a.pos_row - b.pos_row);
+}
+
+function renderMap() {
+    const unitId = currentUnitId();
+    const host = $('#freezerMap').empty();
+    const unit = UNITS.find(u => u.id === unitId);
+    $('#unitTitle').text(unit ? unit.name : 'Freezer Map');
+
+    const sections = rootsOf(unitId);
+    if (!sections.length) {
+        host.html('<div class="text-muted">Nothing defined in this unit yet.</div>');
+        return;
+    }
+
+    sections.forEach(section => {
+        const shelves = childrenOf(section.id);
+        host.append(`<div class="fw-semibold text-muted small mt-2 mb-1">
+                       ${esc(section.label)}</div>`);
+        if (!shelves.length) {
+            host.append('<div class="text-muted small fst-italic mb-2">empty</div>');
+            return;
+        }
+        shelves.forEach(shelf => {
+            const racks = childrenOf(shelf.id);
+            const $row = $('<div class="fz-shelf-row">');
+            $row.append(`<div class="fz-shelf-label">${esc(shelf.label)}</div>`);
+            const $racks = $('<div class="fz-racks">');
+
+            if (!racks.length) {
+                // A shelf with no racks still holds items directly.
+                $racks.append(rackTile(shelf, true));
+            } else {
+                racks.forEach(r => $racks.append(rackTile(r, false)));
+            }
+            $row.append($racks);
+            host.append($row);
+        });
+    });
+}
+
+// One rack drawn as its box matrix. Slots that hold a box are filled; the
+// rest stay visible, so the picture matches the rack rather than hiding
+// what has not been catalogued.
+function rackTile(rack, isBareShelf) {
+    const cols = rack.grid_cols || 4;
+    const rows = rack.grid_rows || 3;
+    const boxes = childrenOf(rack.id);
+
+    const occupied = {};
+    boxes.forEach(b => { occupied[`${b.pos_row},${b.pos_col}`] = b; });
+
+    let slots = '';
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            const b = occupied[`${r},${c}`];
+            if (b) {
+                const cls = b.item_count ? 'filled has-items' : 'filled';
+                slots += `<div class="fz-slot ${cls}" title="${esc(b.label)} — `
+                       + `${b.item_count} item(s)">${esc(shortLabel(b.label))}</div>`;
+            } else {
+                slots += '<div class="fz-slot empty-slot"></div>';
+            }
+        }
+    }
+
+    const total = rack.subtree_item_count || rack.item_count || 0;
+    const empty = total === 0 ? ' is-empty' : '';
+    const sel = rack.id === SELECTED_RACK ? ' selected' : '';
+    return `
+      <div class="fz-rack${empty}${sel}" data-rack="${rack.id}">
+        ${total ? `<span class="fz-rack-count">${total}</span>` : ''}
+        <div class="fz-rack-name">${esc(isBareShelf ? 'no racks' : rack.label)}</div>
+        <div class="fz-grid" style="grid-template-columns: repeat(${cols}, var(--slot))">
+          ${slots}
+        </div>
+      </div>`;
+}
+
+// "Box 12" -> "12" so it fits a 44px slot.
+function shortLabel(label) {
+    const m = String(label).match(/(\d+)\s*$/);
+    return m ? m[1] : String(label).slice(0, 4);
+}
+
+$(document).on('click', '.fz-rack', function () {
+    openRack(+$(this).data('rack'), true);
+});
+
+function openRack(rackId, resetBox) {
+    const rack = BY_ID[rackId];
+    if (!rack) return;
+    SELECTED_RACK = rackId;
+    if (resetBox) SELECTED_BOX = null;
+
+    $('.fz-rack').removeClass('selected');
+    $(`.fz-rack[data-rack="${rackId}"]`).addClass('selected');
+
+    const cols = rack.grid_cols || 4;
+    const rows = rack.grid_rows || 3;
+    const boxes = childrenOf(rackId);
+    const occupied = {};
+    boxes.forEach(b => { occupied[`${b.pos_row},${b.pos_col}`] = b; });
+
+    $('#detailCard').show();
+    $('#detailTitle').text(rack.label);
+    $('#detailPath').html(rack.full_path.split(' > ').map((p, i, a) =>
+        i === a.length - 1 ? `<b>${esc(p)}</b>` : esc(p)).join(' › '));
+
+    const $grid = $('#detailGrid').empty()
+        .css('grid-template-columns', `repeat(${cols}, 96px)`);
+
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            const b = occupied[`${r},${c}`];
+            if (b) {
+                $grid.append(`
+                  <div class="fz-detail-slot filled ${b.id === SELECTED_BOX ? 'active' : ''}"
+                       data-box="${b.id}">
+                    <div class="bx-name" title="${esc(b.label)}">${esc(b.label)}</div>
+                    <div class="bx-n">${b.item_count} item${b.item_count === 1 ? '' : 's'}</div>
+                  </div>`);
+            } else if (!READ_ONLY) {
+                $grid.append(`
+                  <div class="fz-detail-slot" data-newbox="${r},${c}"
+                       title="Add a box here">
+                    <div class="bx-add"><i class="bi bi-plus-lg"></i></div>
+                  </div>`);
+            } else {
+                $grid.append('<div class="fz-detail-slot" style="opacity:.4"></div>');
+            }
+        }
+    }
+
+    if (SELECTED_BOX && BY_ID[SELECTED_BOX]) showBox(SELECTED_BOX);
+    else $('#boxContents').html(
+        '<div class="text-muted small">Pick a box to see what is in it.</div>');
+}
+
+$(document).on('click', '.fz-detail-slot[data-box]', function () {
+    SELECTED_BOX = +$(this).data('box');
+    $('.fz-detail-slot').removeClass('active');
+    $(this).addClass('active');
+    showBox(SELECTED_BOX);
+});
+
+function showBox(boxId) {
+    const box = BY_ID[boxId];
+    $('#boxContents').html('<div class="text-muted small">Loading…</div>');
+    api(`/api/storage/containers/${boxId}/items?deep=1`).then(d => {
+        if (!d.items.length) {
+            $('#boxContents').html(
+                `<div class="fw-semibold mb-1">${esc(box.label)}</div>`
+                + '<div class="text-muted small">Empty.</div>');
+            return;
+        }
+        let html = `<div class="fw-semibold mb-1">${esc(box.label)} `
+                 + `<span class="text-muted">— ${d.items.length} item(s)</span></div>`
+                 + '<ul class="list-unstyled mb-0 small">';
+        d.items.forEach(it => {
+            html += `<li class="py-1 border-bottom">${esc(it.name)}</li>`;
+        });
+        $('#boxContents').html(html + '</ul>');
+    }).catch(e => $('#boxContents').html(
+        `<div class="text-danger small">${esc(e.message)}</div>`));
+}
+
+// Add a box at a specific slot. Position is what makes the picture match the
+// rack, so it is set explicitly rather than appended.
+$(document).on('click', '.fz-detail-slot[data-newbox]', function () {
+    if (READ_ONLY) return;
+    const [r, c] = String($(this).data('newbox')).split(',').map(Number);
+    const rack = BY_ID[SELECTED_RACK];
+    const existing = childrenOf(SELECTED_RACK).length;
+    const label = prompt(`Name for the box at column ${c + 1}, row ${r + 1} `
+                       + `of ${rack.label}:`, `Box ${existing + 1}`);
+    if (!label) return;
+    api('/api/storage/containers', {
+        method: 'POST',
+        body: JSON.stringify({unit_id: rack.unit_id, parent_id: rack.id,
+                              kind: 'box', label, pos_row: r, pos_col: c})
+    }).then(() => load(true)).catch(e => alert(e.message));
+});
+
+$('#detailClose').on('click', () => {
+    $('#detailCard').hide();
+    SELECTED_RACK = SELECTED_BOX = null;
+    $('.fz-rack').removeClass('selected');
+});
+
+$('#unitPicker').on('change', () => {
+    SELECTED_RACK = SELECTED_BOX = null;
+    $('#detailCard').hide();
+    renderMap();
+});
+
+$(load);
+</script>
+{% endblock %}

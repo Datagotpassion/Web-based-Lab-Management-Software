@@ -247,10 +247,17 @@
                         </ul>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="/freezer">
+                            <i class="bi bi-grid-3x3"></i> Freezer Map
+                        </a>
+                    </li>
+                    {% if not read_only %}
+                    <li class="nav-item">
                         <a class="nav-link" href="/storage-editor">
                             <i class="bi bi-diagram-3-fill"></i> Structure
                         </a>
                     </li>
+                    {% endif %}
                     <li class="nav-item">
                         <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#settingsModal">
                             <i class="bi bi-gear-fill"></i>
