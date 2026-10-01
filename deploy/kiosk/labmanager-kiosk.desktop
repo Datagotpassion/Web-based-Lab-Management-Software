@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Lab Management Kiosk
+Comment=Full-screen browser pointed at the local Lab Management server
+# Waits for the service to answer before launching, so a slow boot does not
+# leave Chromium sitting on an error page.
+Exec=/home/kdcberry/LabManagement/deploy/kiosk/start-kiosk.sh
+X-GNOME-Autostart-enabled=true
+NoDisplay=false
