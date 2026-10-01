@@ -1,0 +1,18 @@
+id,name,target_species,target_isotype,host_species,format,conjugate,fluorophore_excitation,fluorophore_emission,cross_adsorbed,cross_adsorbed_against,supplier,catalog_number,lot_number,applications,dilution_if,dilution_wb,dilution_ihc,storage_temp,stock_concentration,aliquot_volume,notes,fridge_region_id,created_at
+1,AF 568 donkey anti-mouse ,Mouse,IgG (H+L),Donkey,,,,,,,,,,,,,,4C,,,,,2026-01-30 15:39:23
+2,Donkey anti-Rat,Rat,IgG (H+L),Donkey,,Alexa Fluor 647,,,,,,,,,,,,4C,,,,,2026-01-30 15:40:32
+3,Donkey anti-Rabbit,Rabbit,IgG (H+L),Donkey,,Alexa Fluor 546,,,,,,,,,,,,4C,,,,,2026-01-30 15:59:56
+4,Goat anti-Rabbit,Rabbit,IgG (H+L),Goat,,Alexa Fluor 488,,,,,,,,,,,,4C,,,,,2026-01-30 16:00:54
+5,Donkey anti-Goat,Goat,IgG (H+L),Donkey,,Alexa Fluor 488,,,,,,,,,,,,4C,,,,,2026-01-30 21:41:43
+6,Goat anti-Mouse,Mouse,IgG (H+L),Goat,,Alexa Fluor 568,,,,,,,,,,,,4C,,,,,2026-01-30 21:42:35
+7,Goat anti-Rabbit,Rabbit,IgG (H+L),Goat,,Alexa Fluor 594,,,,,,,,,,,,4C,,,,,2026-01-30 21:43:15
+8,Goat anti-Mouse,Mouse,IgG (H+L),Goat,,Cy3,,,,,,,,,,,,4C,,,,,2026-01-30 21:43:43
+9,Goat anti-Mouse,Mouse,IgG (H+L),Goat,,Alexa Fluor 488,,,,,,,,,,,,4C,,,,,2026-01-30 21:44:26
+10,Goat anti-Mouse,Mouse,IgM,Goat,,Alexa Fluor 594,,,,,,,,,,,,4C,,,,,2026-01-30 21:44:58
+11,Donkey anti-Rat,Rat,IgG (H+L),Donkey,,Alexa Fluor 647,,,,,,,,,,,,4C,,,,,2026-01-30 21:45:34
+12,Chicken anti-Rabbit,Rabbit,IgG (H+L),Chicken,,Alexa Fluor 488,,,,,,,,,,,,4C,,,,,2026-01-30 21:46:07
+13,Rabbit anti-Mouse,Mouse,IgG (H+L),Rabbit,,Alexa Fluor 594,,,,,,,,,,,,4C,,,,,2026-01-30 21:46:43
+14,Donkey anti-Goat,Goat,IgG (H+L),Donkey,,Alexa Fluor 647,,,,,,,,,,,,4C,,,,,2026-01-30 21:47:23
+15,Donkey anti-Mouse,Mouse,IgG (H+L),Donkey,,Alexa Fluor 568,,,,,,,,,,,,4C,,,,,2026-01-30 21:47:57
+16,Donkey Anti-Mouse IgG H&L (Alexa Fluor® 594),Mouse,,Donkey,,Alexa Fluor 594,,,,,,,,,,,,4C,,,,,2026-01-30 22:16:23
+17,"Donkey anti-Rat IgG (H+L) Highly Cross-Adsorbed Secondary Antibody, Alexa Fluor™ Plus 405 - A48268",Rat,,Donkey,,Alexa Fluor 405,,,,,,,,,,,,4C,,,,,2026-01-30 22:17:19

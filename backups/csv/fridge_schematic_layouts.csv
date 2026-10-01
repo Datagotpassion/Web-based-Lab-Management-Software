@@ -1,0 +1,8 @@
+id,temp_key,section,layout_name,reference_photo,fridge_id,created_at,updated_at
+1,-20C,body,-20C body,ref_1_20260128_112044.jpeg,2,2026-01-28 16:20:37,2026-01-28 16:20:44
+2,-20C,door,-20C door,ref_2_20260128_112434.jpeg,2,2026-01-28 16:24:28,2026-01-28 16:24:34
+3,-80C,body,-80C body,,3,2026-01-28 21:17:09,2026-01-28 21:17:09
+4,4C,body,4C body,,1,2026-01-29 22:52:14,2026-01-29 22:52:26
+7,4C,door,4C door,,1,2026-01-29 22:52:39,2026-01-29 22:58:16
+8,4C,body,Cell Culture Room Fridge - Hess Cell Culture Room body,,5,2026-01-30 15:23:14,2026-01-30 15:23:14
+9,4C,door,Cell Culture Room Fridge - Hess Cell Culture Room door,,5,2026-01-30 15:24:31,2026-01-30 15:24:31
