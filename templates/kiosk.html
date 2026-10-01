@@ -1,0 +1,351 @@
+{# Freezer-side touch display. Deliberately NOT extending base.html: the desk
+   UI's nav, modals and table idioms are wrong for a 1024x600 panel operated
+   with a finger. Read-only by nature -- it shows where things are. #}
+<title>-80 Freezer</title>
+<style>
+    /* Everything is sized for a 1024x600 panel and a fingertip. Nothing
+       scrolls except the one list that has to. */
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; height: 100%; overflow: hidden;
+                 font-family: 'Segoe UI', system-ui, sans-serif;
+                 background: #0f1720; color: #e8eef4; user-select: none; }
+    body { display: flex; flex-direction: column; }
+
+    .k-head { height: 56px; flex: 0 0 56px; display: flex; align-items: center;
+              padding: 0 14px; gap: 12px; background: #16212e;
+              border-bottom: 1px solid #243244; }
+    .k-title { font-size: 1.05rem; font-weight: 700; letter-spacing: .02em; }
+    .k-sub { font-size: .76rem; color: #7f93a8; margin-left: auto; }
+
+    .k-body { flex: 1 1 auto; position: relative; overflow: hidden; }
+    .screen { position: absolute; inset: 0; padding: 12px 14px;
+              display: none; flex-direction: column; }
+    .screen.active { display: flex; }
+
+    /* Big back/action buttons -- 64px tall, comfortably hit with a glove off. */
+    .k-btn { height: 64px; border-radius: 10px; border: 2px solid #2d4057;
+             background: #1d2b3c; color: #e8eef4; font-size: 1rem;
+             font-weight: 600; display: flex; align-items: center;
+             justify-content: center; gap: 10px; cursor: pointer; }
+    .k-btn:active { background: #27394f; }
+    .k-btn.wide { flex: 1 1 auto; }
+
+    /* ---- home: two choices, nothing else ---- */
+    .home-grid { flex: 1 1 auto; display: grid; grid-template-columns: 1fr 1fr;
+                 gap: 14px; }
+    .home-tile { border-radius: 14px; background: #1b2a3a; border: 2px solid #2d4057;
+                 display: flex; flex-direction: column; align-items: center;
+                 justify-content: center; gap: 10px; cursor: pointer; }
+    .home-tile:active { background: #233549; }
+    .home-tile .ico { font-size: 2.6rem; line-height: 1; }
+    .home-tile .lbl { font-size: 1.15rem; font-weight: 700; }
+    .home-tile .hint { font-size: .8rem; color: #7f93a8; }
+
+    /* ---- freezer map: 5 shelves x 4 racks, must fit 600px ---- */
+    .map { flex: 1 1 auto; display: flex; flex-direction: column; gap: 6px; }
+    .map-row { flex: 1 1 0; display: flex; gap: 6px; align-items: stretch; }
+    .map-shelf { flex: 0 0 56px; display: flex; align-items: center;
+                 font-size: .78rem; font-weight: 700; color: #7f93a8; }
+    .map-rack { flex: 1 1 0; border-radius: 8px; border: 2px solid #2d4057;
+                background: #1b2a3a; display: flex; align-items: center;
+                justify-content: center; gap: 8px; cursor: pointer;
+                position: relative; }
+    .map-rack:active { background: #27394f; }
+    .map-rack.empty { background: #141f2b; border-style: dashed; color: #4a5f78; }
+    .map-rack .rk { font-size: 1.3rem; font-weight: 800; }
+    .map-rack .ct { font-size: .78rem; color: #5fd0a0; font-weight: 700; }
+    .map-door { flex: 0 0 26px; border-radius: 8px; background: #19304a;
+                border: 1px solid #2d5a8a; color: #6fb1ef; font-size: .62rem;
+                font-weight: 800; letter-spacing: .14em; writing-mode: vertical-rl;
+                display: flex; align-items: center; justify-content: center; }
+
+    /* ---- rack: the 4x3 position matrix, full screen ---- */
+    .rack-grid { flex: 1 1 auto; display: grid; gap: 8px; }
+    .pos { border-radius: 8px; border: 2px solid #2d4057; background: #141f2b;
+           display: flex; flex-direction: column; align-items: center;
+           justify-content: center; cursor: default; padding: 4px; }
+    .pos.filled { background: #1b3a2c; border-color: #2f7d58; cursor: pointer; }
+    .pos.filled:active { background: #245339; }
+    .pos .n { font-size: 1.1rem; font-weight: 800; color: #7f93a8; }
+    .pos.filled .n { color: #9fe3bf; }
+    .pos .c { font-size: .72rem; color: #5fd0a0; font-weight: 700; }
+
+    /* ---- list (A-Z, and position contents) ---- */
+    .list { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    .row { height: 62px; display: flex; align-items: center; padding: 0 14px;
+           border-bottom: 1px solid #22303f; gap: 12px; cursor: pointer; }
+    .row:active { background: #1d2b3c; }
+    .row .nm { flex: 1 1 auto; font-size: .98rem; overflow: hidden;
+               text-overflow: ellipsis; white-space: nowrap; }
+    .row .loc { font-size: .78rem; color: #6fb1ef; font-weight: 700;
+                white-space: nowrap; }
+    .row .none { font-size: .78rem; color: #6b7f94; }
+
+    /* ---- the answer, held on screen while you dig ---- */
+    .answer { flex: 1 1 auto; display: flex; flex-direction: column;
+              align-items: center; justify-content: center; gap: 18px;
+              text-align: center; padding: 0 20px; }
+    .answer .nm { font-size: 1.6rem; font-weight: 700; line-height: 1.2; }
+    .answer .where { font-size: 2.4rem; font-weight: 800; color: #5fd0a0;
+                     letter-spacing: .02em; line-height: 1.15; }
+    .answer .sub { font-size: .9rem; color: #7f93a8; }
+
+    .k-foot { flex: 0 0 auto; display: flex; gap: 10px; padding: 10px 14px 12px; }
+    .empty-note { color: #6b7f94; text-align: center; padding: 30px 0;
+                  font-size: .95rem; }
+</style>
+
+<div class="k-head">
+    <div class="k-title" id="headTitle">&minus;80 &deg;C Freezer</div>
+    <div class="k-sub" id="headSub"></div>
+</div>
+
+<div class="k-body">
+    <!-- Home -->
+    <div class="screen active" id="scHome">
+        <div class="home-grid">
+            <div class="home-tile" data-go="find">
+                <div class="ico">&#128269;</div>
+                <div class="lbl">Find a reagent</div>
+                <div class="hint" id="findHint"></div>
+            </div>
+            <div class="home-tile" data-go="map">
+                <div class="ico">&#129520;</div>
+                <div class="lbl">Browse the freezer</div>
+                <div class="hint">shelves and racks</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- A-Z list -->
+    <div class="screen" id="scFind">
+        <div class="list" id="findList"></div>
+        <div class="k-foot"><div class="k-btn wide" data-back="home">&larr; Back</div></div>
+    </div>
+
+    <!-- Freezer map -->
+    <div class="screen" id="scMap">
+        <div class="map" id="mapGrid"></div>
+        <div class="k-foot"><div class="k-btn wide" data-back="home">&larr; Back</div></div>
+    </div>
+
+    <!-- One rack's positions -->
+    <div class="screen" id="scRack">
+        <div class="rack-grid" id="rackGrid"></div>
+        <div class="k-foot"><div class="k-btn wide" data-back="map">&larr; Back</div></div>
+    </div>
+
+    <!-- What is in one position -->
+    <div class="screen" id="scPos">
+        <div class="list" id="posList"></div>
+        <div class="k-foot"><div class="k-btn wide" data-back="rack">&larr; Back</div></div>
+    </div>
+
+    <!-- The pinned answer -->
+    <div class="screen" id="scAnswer">
+        <div class="answer">
+            <div class="nm" id="ansName"></div>
+            <div class="where" id="ansWhere"></div>
+            <div class="sub" id="ansSub"></div>
+        </div>
+        <div class="k-foot"><div class="k-btn wide" data-back="home">&larr; Done</div></div>
+    </div>
+</div>
+
+<script>
+let CONTAINERS = [], BY_ID = {}, ITEMS = [], UNIT = null;
+let CUR_RACK = null, CUR_POS = null, BACK_FROM_ANSWER = 'home';
+
+const esc = s => { const d = document.createElement('div');
+                   d.textContent = s == null ? '' : s; return d.innerHTML; };
+const $ = sel => document.querySelector(sel);
+const $$ = sel => Array.from(document.querySelectorAll(sel));
+
+function show(id) {
+    $$('.screen').forEach(s => s.classList.remove('active'));
+    $('#sc' + id).classList.add('active');
+}
+
+async function boot() {
+    const [flat, placeable] = await Promise.all([
+        fetch('/api/storage/flat').then(r => r.json()),
+        fetch('/api/storage/placeable').then(r => r.json()),
+    ]);
+    CONTAINERS = flat.containers;
+    BY_ID = {};
+    CONTAINERS.forEach(c => { BY_ID[c.id] = c; });
+
+    // This panel is about the -80 only, and reagents only.
+    const coldest = CONTAINERS.reduce((a, c) =>
+        (c.temp_c != null && (a == null || c.temp_c < a.temp_c)) ? c : a, null);
+    UNIT = coldest ? coldest.unit_id : (CONTAINERS[0] || {}).unit_id;
+    $('#headTitle').textContent = (CONTAINERS.find(c => c.unit_id === UNIT) || {})
+        .unit_name || 'Freezer';
+
+    const inUnit = new Set(CONTAINERS.filter(c => c.unit_id === UNIT).map(c => c.id));
+    ITEMS = placeable.items
+        .filter(i => i.table === 'drugs' && inUnit.has(i.container_id))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+    $('#findHint').textContent = `${ITEMS.length} in this freezer`;
+    $('#headSub').textContent = `${ITEMS.length} reagents`;
+    renderFind();
+    renderMap();
+}
+
+function childrenOf(id) {
+    const p = BY_ID[id];
+    if (!p) return [];
+    return CONTAINERS
+        .filter(c => c.depth === p.depth + 1 &&
+                     c.full_path.startsWith(p.full_path + ' > '))
+        .sort((a, b) => (a.pos_row - b.pos_row) || (a.pos_col - b.pos_col));
+}
+
+// Short address for a container: "2 · C · 7"
+function shortAddr(containerId) {
+    const c = BY_ID[containerId];
+    if (!c) return '';
+    const parts = c.full_path.split(' > ').slice(2);   // drop unit and section
+    return parts.map(p => p.replace(/^Shelf\s*/i, '')).join(' · ');
+}
+
+function renderFind() {
+    $('#findList').innerHTML = ITEMS.length ? ITEMS.map(i => `
+        <div class="row" data-item="${i.id}">
+          <div class="nm">${esc(i.name)}</div>
+          <div class="loc">${esc(shortAddr(i.container_id))}</div>
+        </div>`).join('')
+        : '<div class="empty-note">Nothing placed in this freezer yet.</div>';
+}
+
+function renderMap() {
+    const sections = CONTAINERS.filter(c => c.unit_id === UNIT && c.depth === 0);
+    const host = $('#mapGrid');
+    const rows = [];
+    sections.forEach(sec => {
+        childrenOf(sec.id).forEach(shelf => {
+            const racks = childrenOf(shelf.id);
+            const cells = racks.map(r => {
+                const n = r.subtree_item_count || 0;
+                return `<div class="map-rack ${n ? '' : 'empty'}" data-rack="${r.id}">
+                          <span class="rk">${esc(r.label)}</span>
+                          ${n ? `<span class="ct">${n}</span>` : ''}
+                        </div>`;
+            }).join('');
+            rows.push(`<div class="map-row">
+                         <div class="map-shelf">${esc(shelf.label)}</div>
+                         ${cells || '<div class="map-rack empty">&mdash;</div>'}
+                         <div class="map-door">DOOR</div>
+                       </div>`);
+        });
+    });
+    host.innerHTML = rows.join('') ||
+        '<div class="empty-note">No shelves defined.</div>';
+}
+
+function openRack(rackId) {
+    CUR_RACK = rackId;
+    const rack = BY_ID[rackId];
+    const cols = rack.grid_cols || 4, rws = rack.grid_rows || 3;
+    const taken = {};
+    childrenOf(rackId).forEach(b => { taken[`${b.pos_row},${b.pos_col}`] = b; });
+
+    $('#headSub').textContent = shortAddr(rackId);
+    const grid = $('#rackGrid');
+    grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    grid.style.gridTemplateRows = `repeat(${rws}, 1fr)`;
+
+    let html = '';
+    for (let r = 0; r < rws; r++) {
+        for (let c = 0; c < cols; c++) {
+            const b = taken[`${r},${c}`];
+            const n = r * cols + c + 1;
+            html += b
+                ? `<div class="pos filled" data-pos="${b.id}">
+                     <div class="n">${esc(b.label)}</div>
+                     <div class="c">${b.item_count} item${b.item_count === 1 ? '' : 's'}</div>
+                   </div>`
+                : `<div class="pos"><div class="n">${n}</div></div>`;
+        }
+    }
+    grid.innerHTML = html;
+    show('Rack');
+}
+
+async function openPos(posId) {
+    CUR_POS = posId;
+    $('#headSub').textContent = shortAddr(posId);
+    $('#posList').innerHTML = '<div class="empty-note">Loading…</div>';
+    show('Pos');
+    const d = await fetch(`/api/storage/containers/${posId}/items?deep=1`)
+        .then(r => r.json());
+    $('#posList').innerHTML = d.items.length
+        ? d.items.map(i => `<div class="row" data-name="${esc(i.name)}"
+                                 data-container="${posId}">
+                              <div class="nm">${esc(i.name)}</div>
+                            </div>`).join('')
+        : '<div class="empty-note">Empty.</div>';
+}
+
+// The answer, held on screen: you look it up, then glove up and dig.
+function pin(name, containerId, from) {
+    BACK_FROM_ANSWER = from;
+    const c = BY_ID[containerId];
+    $('#ansName').textContent = name;
+    if (c) {
+        const parts = c.full_path.split(' > ').slice(2);
+        $('#ansWhere').innerHTML = parts.map(esc).join('<br>');
+        $('#ansSub').textContent = c.full_path.split(' > ')[0];
+    } else {
+        $('#ansWhere').textContent = 'No location recorded';
+        $('#ansSub').textContent = '';
+    }
+    show('Answer');
+}
+
+document.addEventListener('click', ev => {
+    const tile = ev.target.closest('[data-go]');
+    if (tile) {
+        const to = tile.dataset.go;
+        if (to === 'find') { $('#headSub').textContent = `${ITEMS.length} reagents`; show('Find'); }
+        if (to === 'map')  { $('#headSub').textContent = ''; show('Map'); }
+        return;
+    }
+    const back = ev.target.closest('[data-back]');
+    if (back) {
+        const to = back.dataset.back;
+        if (to === 'home') { $('#headSub').textContent = `${ITEMS.length} reagents`; show('Home'); }
+        else if (to === 'map') { $('#headSub').textContent = ''; show('Map'); }
+        else if (to === 'rack') openRack(CUR_RACK);
+        return;
+    }
+    const rack = ev.target.closest('[data-rack]');
+    if (rack) { openRack(+rack.dataset.rack); return; }
+
+    const pos = ev.target.closest('[data-pos]');
+    if (pos) { openPos(+pos.dataset.pos); return; }
+
+    const item = ev.target.closest('[data-item]');
+    if (item) {
+        const it = ITEMS.find(i => i.id === +item.dataset.item);
+        if (it) pin(it.name, it.container_id, 'find');
+        return;
+    }
+    const named = ev.target.closest('[data-name]');
+    if (named) { pin(named.dataset.name, +named.dataset.container, 'rack'); }
+});
+
+// The replica is refreshed every few minutes; pick that up without anyone
+// having to touch the panel.
+setInterval(() => {
+    if ($('#scHome').classList.contains('active')) boot().catch(() => {});
+}, 120000);
+
+boot().catch(e => {
+    document.body.innerHTML =
+        `<div class="empty-note" style="padding-top:60px">
+           Could not reach the server.<br><small>${esc(e.message)}</small>
+         </div>`;
+});
+</script>

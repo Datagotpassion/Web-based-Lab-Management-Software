@@ -643,6 +643,17 @@ def api_health():
         return jsonify({'status': 'error', 'error': str(exc)}), 500
 
 
+@app.route('/kiosk')
+def kiosk():
+    """Freezer-side touch display.
+
+    A separate UI rather than a responsive variant of the desk pages: at
+    1024x600 with a finger, the nav, tables and modals of the desk UI are the
+    wrong idioms. Read-only by nature -- it answers "where is this?".
+    """
+    return render_template('kiosk.html')
+
+
 @app.route('/freezer')
 def freezer_map():
     """Spatial view of a storage unit: shelves, racks, and each rack's boxes.

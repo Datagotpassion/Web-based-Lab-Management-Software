@@ -93,8 +93,9 @@
     <div class="d-flex gap-2 align-items-center">
         <select class="form-select form-select-sm" id="unitPicker" style="width:auto"></select>
         {% if not read_only %}
-        <a href="/storage-editor" class="btn btn-sm btn-outline-secondary">
-            <i class="bi bi-diagram-3"></i> Tree editor
+        <a href="/storage-editor" class="btn btn-sm btn-outline-secondary"
+           title="Add or remove units, shelves and racks">
+            <i class="bi bi-diagram-3"></i> Edit layout
         </a>
         {% endif %}
     </div>
@@ -165,8 +166,8 @@
             </div>
         </div>
         <div class="small text-muted mb-2">
-            Ticked items will be in this box. Unticking one leaves it with no
-            location rather than deleting it.
+            What is in here is listed first. Tick to add, untick to remove &mdash;
+            removing clears an item's location rather than deleting it.
         </div>
         <div id="cmList" style="max-height:46vh; overflow-y:auto"></div>
       </div>
@@ -503,6 +504,12 @@ function renderCmList() {
         if (unplacedOnly && i.container_id !== null && !CM_CHECKED.has(i.id))
             return false;
         return true;
+    // What is in this position comes first, so opening it answers "what is in
+    // here?" immediately rather than making you hunt an alphabetical list.
+    }).sort((a, b) => {
+        const ha = CM_CHECKED.has(a.id) ? 0 : 1;
+        const hb = CM_CHECKED.has(b.id) ? 0 : 1;
+        return ha - hb || a.name.localeCompare(b.name);
     });
 
     if (!rows.length) {
