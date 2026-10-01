@@ -9,6 +9,29 @@ set -uo pipefail
 
 URL="${KIOSK_URL:-http://localhost:5000/}"
 PROFILE="${KIOSK_PROFILE:-$HOME/.config/labmanager-kiosk}"
+LOG="${KIOSK_LOG:-$HOME/.local/state/labmanager-kiosk.log}"
+
+# Keep our own log: launched from XDG autostart there is nowhere for stdout to
+# go, so a failure leaves no trace at all.
+mkdir -p "$(dirname "$LOG")"
+exec >>"$LOG" 2>&1
+echo "=== kiosk start $(date -Is) ==="
+
+# XDG autostart does not reliably export WAYLAND_DISPLAY, and without it the
+# Wayland detection below fails, Chromium falls back to X11, and exits with
+# "Missing X server". Find the compositor socket ourselves rather than trusting
+# the inherited environment.
+: "${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"
+export XDG_RUNTIME_DIR
+if [[ -z "${WAYLAND_DISPLAY:-}" ]]; then
+    for sock in "$XDG_RUNTIME_DIR"/wayland-[0-9]*; do
+        if [[ -S "$sock" ]]; then
+            export WAYLAND_DISPLAY="$(basename "$sock")"
+            echo "detected compositor socket: $WAYLAND_DISPLAY"
+            break
+        fi
+    done
+fi
 
 # Wait for the service rather than racing it at boot.
 for _ in $(seq 1 60); do
