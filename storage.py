@@ -201,7 +201,7 @@ class StorageTree:
 
     def create_container(self, unit_id, parent_id=None, kind='shelf', label='',
                          temp_c=None, owner_lab=None, pos_row=None, pos_col=None,
-                         notes=None):
+                         grid_rows=None, grid_cols=None, notes=None):
         label = (label or '').strip()
         if not label:
             raise StorageError('A container needs a label')
@@ -221,9 +221,12 @@ class StorageTree:
         with self._conn() as c:
             cur = c.execute(
                 'INSERT INTO storage_containers (unit_id, parent_id, kind, label,'
-                ' temp_c, owner_lab, pos_row, pos_col) VALUES (?,?,?,?,?,?,?,?)',
+                ' temp_c, owner_lab, pos_row, pos_col, grid_rows, grid_cols)'
+                ' VALUES (?,?,?,?,?,?,?,?,?,?)',
                 (unit_id, parent_id, kind, label, _num(temp_c),
-                 owner_lab or None, pos_row, pos_col))
+                 owner_lab or None, pos_row, pos_col,
+                 int(grid_rows) if grid_rows else None,
+                 int(grid_cols) if grid_cols else None))
             new_id = cur.lastrowid
         return self.get_container(new_id)
 
@@ -253,7 +256,11 @@ class StorageTree:
     def update_container(self, container_id, **fields):
         self.get_container(container_id)
         allowed = ('kind', 'label', 'temp_c', 'owner_lab', 'pos_row', 'pos_col',
-                   'row_span', 'col_span', 'depth_index', 'color')
+                   'row_span', 'col_span', 'depth_index', 'color',
+                   # How this container's children are physically arranged --
+                   # a rack holding boxes in a 4-wide, 3-tall matrix is
+                   # grid_cols=4, grid_rows=3. Drives the spatial view.
+                   'grid_rows', 'grid_cols')
         sets, params = [], []
         for key in allowed:
             if key in fields:
@@ -267,6 +274,13 @@ class StorageTree:
                 elif key in ('pos_row', 'pos_col', 'row_span', 'col_span',
                              'depth_index'):
                     value = int(value or 0)
+                elif key in ('grid_rows', 'grid_cols'):
+                    # NULL means "no declared shape"; 0 would claim an empty
+                    # grid, which is a different and wrong thing.
+                    value = int(value) if value not in (None, '') else None
+                    if value is not None and not 1 <= value <= 50:
+                        raise StorageError(
+                            f'{key} must be between 1 and 50, got {value}')
                 else:
                     value = value or None
                 sets.append(f'{key} = ?')
@@ -429,6 +443,12 @@ class StorageTree:
                               else unit['default_temp_c'],
                     'temp_is_override': node['temp_c'] is not None,
                     'owner_lab': node['owner_lab'],
+                    # Physical arrangement of this container's children, and
+                    # this container's own slot inside its parent.
+                    'grid_rows': node['grid_rows'],
+                    'grid_cols': node['grid_cols'],
+                    'pos_row': node['pos_row'],
+                    'pos_col': node['pos_col'],
                     'item_count': node['item_count'],
                     'subtree_item_count': node['subtree_item_count'],
                     'child_count': node['child_count'],
