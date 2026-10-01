@@ -142,6 +142,42 @@
         </div>
     </div>
 </div>
+
+<!-- What goes in this box. A box routinely holds several things, so this
+     assigns many at once rather than one record at a time. -->
+<div class="modal fade" id="contentsModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title">Contents of <span id="cmBoxName" class="text-primary"></span></h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex gap-2 mb-2">
+            <input class="form-control form-control-sm" id="cmFilter"
+                   placeholder="Filter by name…">
+            <div class="form-check form-switch flex-shrink-0 d-flex align-items-center">
+                <input class="form-check-input me-1" type="checkbox" id="cmUnplacedOnly">
+                <label class="form-check-label small text-nowrap" for="cmUnplacedOnly">
+                    Unplaced only
+                </label>
+            </div>
+        </div>
+        <div class="small text-muted mb-2">
+            Ticked items will be in this box. Unticking one leaves it with no
+            location rather than deleting it.
+        </div>
+        <div id="cmList" style="max-height:46vh; overflow-y:auto"></div>
+      </div>
+      <div class="modal-footer py-2">
+        <span class="me-auto small text-muted" id="cmCount"></span>
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-primary" id="cmSave">Save contents</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -360,22 +396,136 @@ function showBox(boxId) {
     const box = BY_ID[boxId];
     $('#boxContents').html('<div class="text-muted small">Loading…</div>');
     api(`/api/storage/containers/${boxId}/items?deep=1`).then(d => {
+        const editBtn = READ_ONLY ? '' :
+            `<button class="btn btn-sm btn-outline-primary ms-auto"
+                     id="editContents" data-box="${boxId}">
+               <i class="bi bi-pencil-square"></i> Edit contents
+             </button>`;
+        let html = `<div class="d-flex align-items-center mb-2">
+                      <span class="fw-semibold">${esc(box.label)}</span>
+                      <span class="text-muted small ms-2">
+                        ${d.items.length} item${d.items.length === 1 ? '' : 's'}
+                      </span>${editBtn}
+                    </div>`;
         if (!d.items.length) {
-            $('#boxContents').html(
-                `<div class="fw-semibold mb-1">${esc(box.label)}</div>`
-                + '<div class="text-muted small">Empty.</div>');
-            return;
+            html += '<div class="text-muted small">Empty.</div>';
+        } else {
+            html += '<ul class="list-unstyled mb-0 small">';
+            d.items.forEach(it => {
+                html += `<li class="py-1 border-bottom">${esc(it.name)}</li>`;
+            });
+            html += '</ul>';
         }
-        let html = `<div class="fw-semibold mb-1">${esc(box.label)} `
-                 + `<span class="text-muted">— ${d.items.length} item(s)</span></div>`
-                 + '<ul class="list-unstyled mb-0 small">';
-        d.items.forEach(it => {
-            html += `<li class="py-1 border-bottom">${esc(it.name)}</li>`;
-        });
-        $('#boxContents').html(html + '</ul>');
+        $('#boxContents').html(html);
     }).catch(e => $('#boxContents').html(
         `<div class="text-danger small">${esc(e.message)}</div>`));
 }
+
+/* ---------------------------------------------------------------- contents
+
+   A box holds several things, so this edits the whole set at once: tick what
+   belongs in the box, untick what does not. Unticking clears an item's
+   location rather than deleting the record.
+*/
+let CM_ITEMS = [], CM_BOX = null, CM_CHECKED = new Set();
+
+$(document).on('click', '#editContents', function () {
+    CM_BOX = +$(this).data('box');
+    const box = BY_ID[CM_BOX];
+    $('#cmBoxName').text(box.full_path.split(' > ').slice(-3).join(' › '));
+    $('#cmFilter').val('');
+    $('#cmUnplacedOnly').prop('checked', false);
+    $('#cmList').html('<div class="text-muted small p-2">Loading…</div>');
+    new bootstrap.Modal('#contentsModal').show();
+
+    api('/api/storage/placeable').then(d => {
+        // Reagents only: the -80 holds no antibodies.
+        CM_ITEMS = d.items.filter(i => i.table === 'drugs');
+        CM_CHECKED = new Set(CM_ITEMS.filter(i => i.container_id === CM_BOX)
+                                     .map(i => i.id));
+        renderCmList();
+    }).catch(e => $('#cmList').html(
+        `<div class="text-danger small p-2">${esc(e.message)}</div>`));
+});
+
+function renderCmList() {
+    const q = ($('#cmFilter').val() || '').toLowerCase();
+    const unplacedOnly = $('#cmUnplacedOnly').is(':checked');
+
+    const rows = CM_ITEMS.filter(i => {
+        if (q && !i.name.toLowerCase().includes(q)) return false;
+        // Always keep what is already in this box visible, so a filter cannot
+        // hide something you are about to remove without noticing.
+        if (unplacedOnly && i.container_id !== null && !CM_CHECKED.has(i.id))
+            return false;
+        return true;
+    });
+
+    if (!rows.length) {
+        $('#cmList').html('<div class="text-muted small p-2">Nothing matches.</div>');
+    } else {
+        $('#cmList').html(rows.map(i => {
+            const checked = CM_CHECKED.has(i.id) ? 'checked' : '';
+            const here = i.container_id === CM_BOX;
+            // Where it is now, when that is somewhere other than this box.
+            let where = '';
+            if (!here) {
+                where = i.location
+                    ? `<span class="badge bg-light text-secondary ms-2" style="font-size:.66rem">`
+                      + `${esc(i.location.split(' > ').slice(-2).join(' › '))}</span>`
+                    : `<span class="badge bg-warning-subtle text-warning-emphasis ms-2" `
+                      + `style="font-size:.66rem">unplaced</span>`;
+            }
+            return `
+              <label class="d-flex align-items-center py-1 px-2 border-bottom"
+                     style="cursor:pointer">
+                <input class="form-check-input me-2 cm-tick" type="checkbox"
+                       data-id="${i.id}" ${checked}>
+                <span class="small">${esc(i.name)}</span>
+                ${where}
+              </label>`;
+        }).join(''));
+    }
+    $('#cmCount').text(`${CM_CHECKED.size} item(s) in this box`);
+}
+
+$('#cmFilter').on('input', renderCmList);
+$('#cmUnplacedOnly').on('change', renderCmList);
+
+$(document).on('change', '.cm-tick', function () {
+    const id = +$(this).data('id');
+    this.checked ? CM_CHECKED.add(id) : CM_CHECKED.delete(id);
+    $('#cmCount').text(`${CM_CHECKED.size} item(s) in this box`);
+});
+
+$('#cmSave').on('click', function () {
+    const before = new Set(CM_ITEMS.filter(i => i.container_id === CM_BOX)
+                                   .map(i => i.id));
+    const toAdd = [...CM_CHECKED].filter(id => !before.has(id));
+    const toRemove = [...before].filter(id => !CM_CHECKED.has(id));
+
+    const calls = [];
+    if (toAdd.length) {
+        calls.push(api(`/api/storage/containers/${CM_BOX}/items`, {
+            method: 'POST',
+            body: JSON.stringify({items: toAdd.map(id => ({table: 'drugs', id}))})
+        }));
+    }
+    if (toRemove.length) {
+        calls.push(api('/api/storage/unplace', {
+            method: 'POST',
+            body: JSON.stringify({items: toRemove.map(id => ({table: 'drugs', id}))})
+        }));
+    }
+    if (!calls.length) {
+        bootstrap.Modal.getInstance($('#contentsModal')[0]).hide();
+        return;
+    }
+    Promise.all(calls).then(() => {
+        bootstrap.Modal.getInstance($('#contentsModal')[0]).hide();
+        return load(true);
+    }).catch(e => alert(e.message));
+});
 
 // In a 4x3 rack a box's identity IS its slot, so the name comes from the
 // position rather than being typed. Reading order: across, then down.
