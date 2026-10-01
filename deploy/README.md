@@ -1,5 +1,58 @@
 # Deploying to a Raspberry Pi
 
+## How the two machines relate
+
+```
+   LAB PC  (authoritative)                 PI  "labfridge"  (replica)
+   ┌──────────────────────┐                ┌──────────────────────────┐
+   │ lab_management.db    │  sync_to_pi.py │ lab_management.db        │
+   │ the real database    │ ─────────────▶ │ read-only copy           │
+   │                      │  every 5 min   │                          │
+   │ add / edit records   │   ONE WAY      │ LABMANAGER_READONLY=1    │
+   └──────────────────────┘                │ 7" touchscreen by the -80│
+                                           └──────────────────────────┘
+```
+
+**All changes happen on the PC.** The Pi shows a copy for looking things up at
+the freezer and refuses every write with a 403.
+
+One-way replication, not sync. That is what makes it simple: the replica never
+writes, so there are no id collisions to resolve, no conflicts to arbitrate and
+no delete tombstones to track. Two independently-written databases would need
+all three.
+
+The Pi enforces read-only itself rather than relying on convention, because a
+write accepted there would succeed, look fine, and then be destroyed by the next
+sync -- silent data loss, which is worse than a refusal.
+
+### Syncing
+
+`sync_to_pi.py` runs from Windows Task Scheduler ("LabManagement Sync to Pi")
+every 5 minutes. It:
+
+* snapshots via sqlite's backup API rather than copying the file, so a sync
+  landing mid-write cannot tear the database;
+* sends nothing when content is unchanged, so a frequent timer is free;
+* installs with `mv`, atomic within a filesystem, so a reader never sees a
+  partial file;
+* verifies by hash afterwards, and treats an unreachable Pi as normal.
+
+```bash
+python sync_to_pi.py            # sync if changed
+python sync_to_pi.py --status   # compare both sides, change nothing
+python sync_to_pi.py --force    # send regardless
+```
+
+Change the interval by editing the task in Task Scheduler. `/api/health` on the
+Pi reports `database_mtime`, so replica staleness is always visible.
+
+### Backups
+
+The authoritative database lives on the PC, so `backup_db.py` belongs there and
+the Pi needs no backup at all -- if its SD card dies, reflash and re-sync.
+
+---
+
 Two separate things, deliberately kept apart:
 
 1. **The service** — the Pi serves the app on the lab network so it is reachable
