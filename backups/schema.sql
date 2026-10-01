@@ -1,3 +1,9 @@
+CREATE INDEX idx_containers_legacy ON storage_containers(legacy_zone_id);
+
+CREATE INDEX idx_containers_parent ON storage_containers(parent_id);
+
+CREATE INDEX idx_containers_unit   ON storage_containers(unit_id);
+
 CREATE TABLE drugs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 drug_name TEXT NOT NULL,
@@ -18,7 +24,7 @@ CREATE TABLE drugs (
                 storage_section TEXT,
                 storage_row INTEGER,
                 storage_column INTEGER
-            , fridge_region_id INTEGER, aliquot_volume TEXT);
+            , fridge_region_id INTEGER, aliquot_volume TEXT, container_id INTEGER);
 
 CREATE TABLE fridge_config (
                 temp_key TEXT PRIMARY KEY,
@@ -107,7 +113,7 @@ CREATE TABLE primary_antibodies (
                 notes TEXT,
                 fridge_region_id INTEGER,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            , is_conjugated INTEGER DEFAULT 0, fluorophore TEXT, fluorophore_excitation TEXT, fluorophore_emission TEXT);
+            , is_conjugated INTEGER DEFAULT 0, fluorophore TEXT, fluorophore_excitation TEXT, fluorophore_emission TEXT, container_id INTEGER);
 
 CREATE TABLE secondary_antibodies (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -134,7 +140,7 @@ CREATE TABLE secondary_antibodies (
                 notes TEXT,
                 fridge_region_id INTEGER,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
+            , container_id INTEGER);
 
 CREATE TABLE settings (
                 key TEXT PRIMARY KEY,
@@ -142,3 +148,36 @@ CREATE TABLE settings (
             );
 
 CREATE TABLE sqlite_sequence(name,seq);
+
+CREATE TABLE storage_containers (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    unit_id     INTEGER NOT NULL,
+    parent_id   INTEGER,
+    kind        TEXT NOT NULL,
+    label       TEXT NOT NULL,
+    temp_c      REAL,
+    owner_lab   TEXT,
+    grid_rows   INTEGER,
+    grid_cols   INTEGER,
+    pos_row     INTEGER DEFAULT 0,
+    pos_col     INTEGER DEFAULT 0,
+    row_span    INTEGER DEFAULT 1,
+    col_span    INTEGER DEFAULT 1,
+    depth_index INTEGER DEFAULT 0,
+    color       TEXT,
+    legacy_zone_id INTEGER,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (unit_id)   REFERENCES storage_units(id)      ON DELETE CASCADE,
+    FOREIGN KEY (parent_id) REFERENCES storage_containers(id) ON DELETE CASCADE
+);
+
+CREATE TABLE storage_units (
+    id              INTEGER PRIMARY KEY,
+    name            TEXT NOT NULL,
+    kind            TEXT NOT NULL DEFAULT 'fridge',
+    room            TEXT,
+    default_temp_c  REAL,
+    has_door        INTEGER DEFAULT 1,
+    notes           TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);

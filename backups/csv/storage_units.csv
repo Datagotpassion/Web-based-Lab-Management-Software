@@ -1,0 +1,5 @@
+id,name,kind,room,default_temp_c,has_door,notes,created_at
+1,4°C Fridge,fridge,Main Lab,4.0,1,,2026-10-01 13:51:38
+2,-20°C Freezer,freezer,Main Lab,-20.0,1,,2026-10-01 13:51:38
+3,-80°C Freezer,ultralow,Main Lab,-80.0,0,,2026-10-01 13:51:38
+5,Cell Culture Room Fridge,fridge,Hess Cell Culture Room,4.0,1,,2026-10-01 13:51:38
