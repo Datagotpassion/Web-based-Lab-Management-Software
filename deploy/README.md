@@ -92,6 +92,38 @@ expose port 5000 to anything beyond a trusted network.
 
 For the generic 1024×600 HDMI capacitive panel (USB touch).
 
+### Wiring
+
+The panel has three ports. Which one powers it matters.
+
+```
+        7" 1024x600 panel                      Raspberry Pi
+   +--------------------------+
+   |  HDMI  ------------------+------------>  HDMI0  (micro-HDMI on Pi 4/5;
+   |                          |              the port nearest the USB-C
+   |                          |              power jack = HDMI-A-1)
+   |                          |
+   |  TOUCH ------------------+------------>  any USB-A port  (HID data)
+   |                          |
+   |  POWER <-----------------+---- its own 5V supply, NOT the Pi
+   +--------------------------+
+                                             Pi <--- its own official PSU
+```
+
+- **HDMI** must go to **HDMI0** on a Pi 4/5 — the port closest to the USB-C
+  power jack. That is the connector the kernel calls `HDMI-A-1`, which is what
+  the `video=` line below targets.
+- **TOUCH** is a USB HID connection; no driver is needed.
+- **POWER** gets its own supply. These panels will usually light up from the
+  TOUCH port alone, which is the tempting and wrong option: the panel then
+  draws ~0.5-1 A through the Pi's 5 V rail. Keep the two independent.
+
+If the panel has the built-in USB hub variant it also exposes USB-A sockets,
+useful for a keyboard during setup — but they draw from the panel's supply,
+another reason to give it a real one.
+
+Connect everything before powering the Pi.
+
 ### Display
 
 Touch is a USB HID device and needs no driver. Video usually does need one
@@ -110,11 +142,24 @@ The widely-copied `hdmi_cvt` / `hdmi_group` / `hdmi_mode` lines in `config.txt`
 are **firmware-KMS** options. Current Pi OS uses full KMS (`vc4-kms-v3d`) and
 ignores them — which is why adding them appears to do nothing.
 
-Verify touch:
+### Verifying
+
+Check the two halves separately, so a fault points at one of them:
 
 ```bash
-libinput list-devices | grep -iA4 touch
+# Display: should list HDMI-A-1 at 1024x600
+wlr-randr                  # or: kmsprint | grep -A2 HDMI
+
+# Touch: should show a device with Touchscreen capability
+libinput list-devices | grep -iB2 -A6 touch
+
+# Live touch events -- tap the screen and watch coordinates
+sudo libinput debug-events
 ```
+
+A black screen is almost always the EDID/mode problem above, so check
+`cmdline.txt` first. A working display with touches landing in the wrong place
+is the rotation case below, not a driver fault.
 
 If the panel is mounted portrait, `wlr-randr --output HDMI-A-1 --transform 90`.
 Under Wayland the touch input follows the output transform automatically; this
