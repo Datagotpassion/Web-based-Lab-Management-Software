@@ -29,6 +29,30 @@ else
     command -v xset >/dev/null && { xset s off; xset -dpms; xset s noblank; } || true
 fi
 
+# Which browser to use.
+#
+#   KIOSK_BROWSER=chromium   full Chromium (default; needs a desktop session
+#                            and comfortably more than 1 GB of RAM)
+#   KIOSK_BROWSER=cog        WPE WebKit rendering straight to DRM/KMS -- no
+#                            desktop, no X, no compositor. Far lighter, and
+#                            the only realistic option on a Pi 2 / Zero.
+#
+# On a weak board, run Pi OS Lite and use cog: there is no desktop to load and
+# nothing competing for the 1 GB.
+KIOSK_BROWSER="${KIOSK_BROWSER:-chromium}"
+
+if [[ "$KIOSK_BROWSER" == "cog" ]]; then
+    COG=$(command -v cog) || {
+        echo "cog not found. sudo apt install -y cog" >&2
+        exit 1
+    }
+    # The DRM backend draws directly to the framebuffer and takes touch from
+    # libinput, so this works on Pi OS Lite with no graphical session.
+    export COG_PLATFORM_DRM_VIDEO_MODE="${COG_PLATFORM_DRM_VIDEO_MODE:-1024x600}"
+    export WPE_DRM_LIBINPUT_SEAT="${WPE_DRM_LIBINPUT_SEAT:-seat0}"
+    exec "$COG" --platform=drm "$URL"
+fi
+
 # Chromium on Pi OS is `chromium-browser` on older images, `chromium` on newer.
 BROWSER=$(command -v chromium-browser || command -v chromium) || {
     echo "No chromium found. sudo apt install -y chromium-browser" >&2
