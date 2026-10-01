@@ -1,4 +1,8 @@
+# Runtime dependencies. Deliberately all pure-Python: piwheels has no
+# prebuilt wheels for Trixie-era Pi OS Python, so anything compiled (Pillow,
+# numpy) tries to build from source on the Pi and hangs. Keep it that way --
+# if a compiled dependency ever becomes necessary, install it via apt into a
+# --system-site-packages venv instead of pip.
 Flask==3.0.0
 Werkzeug==3.0.1
-pytest==8.0.0
-Pillow==10.1.0
+waitress==3.0.0

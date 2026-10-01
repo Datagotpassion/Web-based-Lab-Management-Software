@@ -1,0 +1,46 @@
+[Unit]
+Description=Lab Management System (reagent inventory + storage structure)
+Documentation=https://github.com/Datagotpassion/LabManagement
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kdcberry
+Group=kdcberry
+WorkingDirectory=/home/kdcberry/LabManagement
+
+# serve.py runs waitress, not the Flask dev server.
+ExecStart=/home/kdcberry/LabManagement/venv/bin/python serve.py
+
+Environment=LABMANAGER_HOST=0.0.0.0
+Environment=LABMANAGER_PORT=5000
+Environment=LABMANAGER_THREADS=4
+# Absolute, so the service does not depend on the working directory and the
+# database cannot be accidentally created somewhere else.
+Environment=LABMANAGER_DB=/home/kdcberry/LabManagement/lab_management.db
+# Replace with a real random value: python -c "import secrets;print(secrets.token_hex(32))"
+# Environment=LABMANAGER_SECRET_KEY=
+
+Restart=on-failure
+RestartSec=5
+
+# The database is a single file and sqlite is not crash-safe against a hard
+# kill mid-write, so give it time to finish rather than SIGKILLing promptly.
+TimeoutStopSec=30
+KillSignal=SIGINT
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=labmanager
+
+# Modest hardening. The service only needs to read its checkout and write its
+# own database, so everything else is read-only.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/kdcberry/LabManagement
+
+[Install]
+WantedBy=multi-user.target

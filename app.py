@@ -6,26 +6,25 @@ Main application file with routes and API endpoints
 from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for
 from database import Database
 from storage import StorageTree, StorageError, KINDS, UNIT_KINDS
-from werkzeug.utils import secure_filename
 import functools
 import io
 import os
 from datetime import datetime
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'lab-management-secret-key-2026'
-app.config['UPLOAD_FOLDER'] = 'static/fridge_photos'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.config['SECRET_KEY'] = os.environ.get(
+    'LABMANAGER_SECRET_KEY', 'lab-management-secret-key-2026')
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max request size
 
-# Initialize database
-db = Database('lab_management.db')
+# Database path is overridable so the same checkout can run against a different
+# file on the Pi without editing code.
+DB_PATH = os.environ.get('LABMANAGER_DB', 'lab_management.db')
+
+db = Database(DB_PATH)
 
 # Storage container tree (units > sections > shelves > racks > boxes > ...).
 # ensure_schema is idempotent and makes a fresh install come up working.
-storage = StorageTree('lab_management.db').ensure_schema()
-
-# Ensure upload folder exists
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+storage = StorageTree(DB_PATH).ensure_schema()
 
 
 @app.context_processor
@@ -586,6 +585,33 @@ def storage_api(fn):
 
 def _body():
     return request.get_json(silent=True) or {}
+
+
+@app.route('/api/health', methods=['GET'])
+def api_health():
+    """Liveness plus a quick sanity summary.
+
+    Lets the deployment be checked from the PC without SSH, the same way
+    PlateScope's /api/status is used:
+        Invoke-RestMethod http://raspberrypi.local:5000/api/health
+    """
+    try:
+        units = storage.list_units()
+        containers = storage.flat_list()
+        records = db.get_all_records()
+        placed = sum(1 for r in records if r['container_id'] is not None)
+        return jsonify({
+            'status': 'ok',
+            'database': os.path.abspath(DB_PATH),
+            'units': len(units),
+            'containers': len(containers),
+            'records': len(records),
+            'records_placed': placed,
+            'records_unplaced': len(records) - placed,
+            'unplaced_items': len(storage.unplaced_items()),
+        })
+    except Exception as exc:  # surfaced rather than a bare 500
+        return jsonify({'status': 'error', 'error': str(exc)}), 500
 
 
 @app.route('/storage-editor')
