@@ -177,7 +177,6 @@ CREATE TABLE storage_units (
     kind            TEXT NOT NULL DEFAULT 'fridge',
     room            TEXT,
     default_temp_c  REAL,
-    has_door        INTEGER DEFAULT 1,
     notes           TEXT,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );

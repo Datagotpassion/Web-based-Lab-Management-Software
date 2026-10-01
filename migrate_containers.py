@@ -305,7 +305,6 @@ CREATE TABLE IF NOT EXISTS storage_units (
     kind            TEXT NOT NULL DEFAULT 'fridge',
     room            TEXT,
     default_temp_c  REAL,
-    has_door        INTEGER DEFAULT 1,
     notes           TEXT,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -353,11 +352,14 @@ def apply_plan(conn, units, roots, mapped):
     cur.execute('DELETE FROM storage_units')
 
     for u in units:
+        # No has_door flag: whether a unit has door storage is simply whether a
+        # "Door" section container exists under it. A unit can have none, one,
+        # or several, at whatever temperatures they actually run.
         cur.execute(
-            'INSERT INTO storage_units (id, name, kind, room, default_temp_c, has_door) '
-            'VALUES (?, ?, ?, ?, ?, ?)',
+            'INSERT INTO storage_units (id, name, kind, room, default_temp_c) '
+            'VALUES (?, ?, ?, ?, ?)',
             (u['id'], u['name'], UNIT_KINDS.get(u['temp_type'], 'fridge'),
-             u['location'], temp_from_key(u['temp_type']), u['has_door']))
+             u['location'], temp_from_key(u['temp_type'])))
 
     def insert(node, parent_id):
         cur.execute(
