@@ -67,7 +67,16 @@ if [[ -f "$PREFS" ]]; then
         "$PREFS" 2>/dev/null || true
 fi
 
+# Chromium defaults to its X11 backend and dies with "Missing X server or
+# $DISPLAY" on a Wayland-only session (Pi OS Trixie uses labwc), so the
+# platform has to be named explicitly.
+CHROME_FLAGS=()
+if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+    CHROME_FLAGS+=(--ozone-platform=wayland)
+fi
+
 exec "$BROWSER" \
+    "${CHROME_FLAGS[@]}" \
     --kiosk \
     --app="$URL" \
     --user-data-dir="$PROFILE" \
