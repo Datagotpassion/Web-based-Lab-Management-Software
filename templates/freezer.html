@@ -606,7 +606,12 @@ $('#cmSave').on('click', function () {
 // position rather than being typed. Reading order: across, then down.
 function slotName(rack, r, c) {
     const cols = rack.grid_cols || 4;
-    return String(r * cols + c + 1);
+    const n = r * cols + c + 1;
+    // Match whatever this rack already calls its positions, so a rack filled
+    // earlier and one filled now read the same.
+    const sibling = childrenOf(rack.id)[0];
+    const prefix = sibling ? (String(sibling.label).match(/^(\D*)/) || ['', ''])[1] : 'Box ';
+    return `${prefix}${n}`;
 }
 
 // One tap creates the box. No dialog -- there is nothing to decide.
