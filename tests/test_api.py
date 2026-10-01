@@ -300,9 +300,13 @@ class TestPageRoutes:
         response = client.get('/')
         assert response.status_code == 200
 
-    def test_config_page(self, client):
-        """Test config page loads"""
-        response = client.get('/config')
+    def test_storage_editor_page(self, client):
+        """Test storage structure editor loads
+
+        Replaces a test for /config, which was removed when fridge settings
+        moved into the settings modal in base.html.
+        """
+        response = client.get('/storage-editor')
         assert response.status_code == 200
 
     def test_import_export_page(self, client):
