@@ -118,6 +118,22 @@
                 <form id="recordForm">
                     <input type="hidden" id="recordId">
 
+                    <!-- Paste the supplier's product page and fill the form
+                         from it. Only blanks are filled, so anything already
+                         typed is never overwritten. -->
+                    <div class="input-group input-group-sm mb-3">
+                        <span class="input-group-text">
+                            <i class="bi bi-link-45deg"></i>
+                        </span>
+                        <input type="url" class="form-control" id="productUrl"
+                               placeholder="Paste the supplier's product page, then Fetch">
+                        <button type="button" class="btn btn-outline-primary"
+                                id="btnFetchProduct">
+                            <i class="bi bi-download"></i> Fetch details
+                        </button>
+                    </div>
+                    <div id="fetchStatus" class="small mb-3" style="display:none"></div>
+
                     <div class="row">
                         <div class="col-md-5 mb-3">
                             <label for="drugName" class="form-label">Drug Name *</label>
