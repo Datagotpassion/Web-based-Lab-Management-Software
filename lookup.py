@@ -38,9 +38,35 @@ UNIT_CANON = {
     'm': 'M', 'iu/ml': 'IU/mL', 'u/ml': 'U/mL',
 }
 
-CONCENTRATION = re.compile(
-    r'(\d+(?:\.\d+)?)\s*(mg/mL|µg/mL|ug/mL|ng/mL|mM|µM|uM|nM|IU/mL|U/mL)\b',
-    re.I)
+# Deliberately NOT extracting concentration from prose.
+#
+# Product descriptions are full of potency figures -- "IC50 = 140 nM", "Kd of
+# 1 uM" -- and pulling those in as a stock concentration produces a number that
+# looks authoritative and is completely wrong. Someone would dilute from it.
+# Leaving the field blank is strictly better, so concentration is only taken
+# from an explicitly labelled field, never from free text.
+LABELLED_CONCENTRATION = re.compile(
+    r'(?:stock\s+)?concentration\s*[:=]\s*(\d+(?:\.\d+)?)\s*'
+    r'(mg/mL|µg/mL|ug/mL|ng/mL|mM|µM|uM|nM|IU/mL|U/mL)\b', re.I)
+
+# Values vendors use to mean "nothing here".
+JUNK = {'-', '--', 'n/a', 'na', 'none', 'null', 'not applicable', ''}
+
+# Catalogue numbers in pasted page text. Vendors label them differently --
+# "Cat. No.", "Order no.", "Product Number", "Item #", "REF" -- so the label is
+# matched loosely, with a shape-based fallback for grouped-digit numbers like
+# Miltenyi's 130-109-386.
+CATALOGUE_LABELLED = re.compile(
+    r'\b(?:cat(?:alog|alogue)?|order|product|item|ref(?:erence)?)'
+    # The label parts may be separated by spaces: "Cat. No.", "Product Number".
+    r'(?:\s*(?:\.|no\.?|number|#))*\s*[:#]?\s*'
+    r'([A-Za-z]{0,4}[-_]?\d{3,8}(?:[-_][A-Za-z0-9]{1,6})*)', re.I)
+CATALOGUE_SHAPED = re.compile(r'\b(\d{3}-\d{3}-\d{3})\b')
+
+# "Size: 25 ug", "Pack size 1 mg".
+SIZE_LABELLED = re.compile(
+    r'\b(?:pack\s*)?(?:size|quantity|amount)\s*[:=]?\s*'
+    r'(\d+(?:\.\d+)?)\s*(µg|ug|mcg|mg|ng|g|µL|uL|mL|L)\b', re.I)
 
 # Pack size, e.g. the 50UG in catalogue number 200-02-50UG.
 PACK_SIZE = re.compile(r'(\d+(?:\.\d+)?)\s*(µg|ug|mcg|mg|ng|g|µL|uL|mL|L)\b', re.I)
@@ -132,7 +158,22 @@ def _clean(text, limit=400):
     text = _unescape_literals(text)
     text = re.sub(r'<[^>]+>', ' ', text)
     text = re.sub(r'\s+', ' ', text).strip()
+    # Vendors put placeholders in these fields; a literal "-" as the supplier
+    # is worse than an empty box, because it looks deliberate.
+    if text.lower() in JUNK:
+        return None
     return text[:limit] or None
+
+
+def _is_vendor_name(name, host):
+    """Is this just the company's own name rather than a product?
+
+    Compared on letters alone, so "Miltenyi Biotec" matches the host
+    miltenyibiotec.com.
+    """
+    squash = lambda s: re.sub(r'[^a-z]', '', s.lower())
+    n, h = squash(name), squash(host.split('.')[0])
+    return bool(n) and bool(h) and (n == h or n in h or h in n)
 
 
 def _pack_size(*sources):
@@ -148,10 +189,11 @@ def _pack_size(*sources):
 
 
 def _concentration(*sources):
+    """Only an explicitly labelled concentration. See LABELLED_CONCENTRATION."""
     for src in sources:
         if not src:
             continue
-        m = CONCENTRATION.search(str(src))
+        m = LABELLED_CONCENTRATION.search(str(src))
         if m:
             unit = UNIT_CANON.get(m.group(2).lower(), m.group(2))
             return float(m.group(1)), unit
@@ -165,8 +207,34 @@ def extract(url, html=None):
     blanks without overwriting anything the user has already typed.
     """
     html = html if html is not None else fetch(url)
-    found = {'product_url': url}
+    found = {'product_url': url} if url else {}
     sources = []
+
+    # Content pasted from a browser may be the page's text rather than its
+    # source. There is no markup to mine, so take the first substantial line as
+    # the name and look for a catalogue-shaped token.
+    if '<' not in html[:2000]:
+        lines = [l.strip() for l in html.splitlines() if l.strip()]
+        if lines:
+            found['drug_name'] = lines[0][:200]
+            sources.append('pasted text')
+        body = ' '.join(lines)
+        m = CATALOGUE_LABELLED.search(body) or CATALOGUE_SHAPED.search(body)
+        if m:
+            found['product_number'] = m.group(1)
+        size = SIZE_LABELLED.search(body)
+        if size:
+            unit = UNIT_CANON.get(size.group(2).lower(), size.group(2))
+            found['aliquot_volume'] = f'{size.group(1)} {unit}'
+        desc = next((l for l in lines[1:] if len(l) > 60), None)
+        if desc:
+            found['notes'] = desc[:400]
+        conc, unit = _concentration(body)
+        if conc is not None:
+            found['stock_concentration'] = conc
+            found['stock_unit'] = unit
+        found['_sources'] = sources or ['pasted text']
+        return found
 
     product = next(iter(_json_ld_products(html)), None)
     if product:
@@ -201,6 +269,8 @@ def extract(url, html=None):
         if size:
             found['aliquot_volume'] = size
 
+    host = re.sub(r'^www\.', '', urllib.parse.urlparse(url).hostname or '')
+
     # Fall back to the page's own metadata for anything still missing.
     if 'drug_name' not in found:
         title = _clean(_meta(html, 'og:title'), 200)
@@ -209,8 +279,13 @@ def extract(url, html=None):
             title = _clean(m.group(1), 200) if m else None
         if title:
             # Trim the vendor's own suffix: "Product | Thermo Fisher".
-            found['drug_name'] = re.split(r'\s+[|–—-]\s+', title)[0].strip()
-            sources.append('page title')
+            name = re.split(r'\s+[|–—-]\s+', title)[0].strip()
+            # A title that is only the vendor's name means the page did not
+            # render a product -- usually it is built client-side. Taking it
+            # would put the company name in as the reagent.
+            if name and not _is_vendor_name(name, host):
+                found['drug_name'] = name
+                sources.append('page title')
 
     if 'notes' not in found:
         desc = _clean(_meta(html, 'og:description') or _meta(html, 'description'))
@@ -218,12 +293,19 @@ def extract(url, html=None):
             found['notes'] = desc
             sources.append('page description')
 
-    if 'supplier' not in found:
-        host = urllib.parse.urlparse(url).hostname or ''
-        host = re.sub(r'^www\.', '', host)
-        if host:
-            found['supplier'] = host
-            sources.append('web address')
+    if 'supplier' not in found and host:
+        found['supplier'] = host
+        sources.append('web address')
+
+    # A catalogue number is often the last numeric-ish segment of the URL, and
+    # is worth having when the page itself gave nothing.
+    if 'product_number' not in found:
+        for seg in reversed(urllib.parse.urlparse(url).path.strip('/').split('/')):
+            seg = seg.split('?')[0]
+            if re.fullmatch(r'[A-Za-z]{0,3}[-_]?\d{3,8}', seg):
+                found['product_number'] = seg
+                sources.append('web address')
+                break
 
     found['_sources'] = sources or ['nothing recognisable']
     return found

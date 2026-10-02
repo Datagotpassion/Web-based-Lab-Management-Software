@@ -851,16 +851,22 @@ def api_lookup():
     returned, so the caller can fill blanks without overwriting anything
     already typed.
     """
-    url = (_body().get('url') or '').strip()
-    if not url:
+    data = _body()
+    url = (data.get('url') or '').strip()
+    # Page content supplied by the browser, for vendors this server cannot
+    # fetch: some refuse non-browser clients, some build the page in
+    # JavaScript. Pasting what the browser already has works for both.
+    pasted = (data.get('html') or '').strip()
+
+    if not url and not pasted:
         return jsonify({'success': False, 'error': 'No address given.'}), 400
     # Add a scheme only when one is absent, so pasting "thermofisher.com/..."
     # works without turning "file://..." into a nonsense hostname and a
     # confusing error.
-    if not re.match(r'^[a-zA-Z][a-zA-Z0-9+.-]*://', url):
+    if url and not re.match(r'^[a-zA-Z][a-zA-Z0-9+.-]*://', url):
         url = 'https://' + url
     try:
-        found = lookup.extract(url)
+        found = lookup.extract(url, html=pasted or None)
     except lookup.LookupError_ as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
     except Exception as exc:  # noqa: BLE001 - surfaced to the user as-is

@@ -132,7 +132,24 @@
                             <i class="bi bi-download"></i> Fetch details
                         </button>
                     </div>
-                    <div id="fetchStatus" class="small mb-3" style="display:none"></div>
+                    <div id="fetchStatus" class="small mb-2" style="display:none"></div>
+
+                    <!-- Some vendors refuse this server or build their pages in
+                         JavaScript, so nothing can be fetched. Pasting what the
+                         browser already shows works for those. -->
+                    <div id="pasteFallback" class="mb-3" style="display:none">
+                        <textarea class="form-control form-control-sm" rows="4"
+                                  id="pastedPage"
+                                  placeholder="On the product page press Ctrl+A then Ctrl+C, and paste here"></textarea>
+                        <div class="d-flex gap-2 mt-1">
+                            <button type="button" class="btn btn-sm btn-outline-primary"
+                                    id="btnFetchPasted">
+                                <i class="bi bi-clipboard-check"></i> Use pasted page
+                            </button>
+                            <button type="button" class="btn btn-sm btn-link text-muted"
+                                    id="btnHidePaste">Cancel</button>
+                        </div>
+                    </div>
 
                     <div class="row">
                         <div class="col-md-5 mb-3">
