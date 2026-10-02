@@ -179,8 +179,24 @@
                             </select>
                         </div>
                         <div class="col-md-3 mb-3">
-                            <label for="aliquotVolume" class="form-label">Aliquot Volume</label>
-                            <input type="text" class="form-control" id="aliquotVolume" placeholder="e.g., 50 µL, 1 mL">
+                            <label for="aliquotValue" class="form-label">Aliquot</label>
+                            <div class="input-group">
+                                <input type="number" step="any" class="form-control"
+                                       id="aliquotValue" placeholder="50">
+                                <select class="form-select" id="aliquotUnit"
+                                        style="max-width: 5.5rem">
+                                    <option value="µL">µL</option>
+                                    <option value="mL">mL</option>
+                                    <option value="L">L</option>
+                                    <option value="µg">µg</option>
+                                    <option value="mg">mg</option>
+                                    <option value="g">g</option>
+                                    <option value="vials">vials</option>
+                                </select>
+                            </div>
+                            <!-- Kept as one text column, but entered as a number
+                                 and a unit so a bare "5" cannot be saved. -->
+                            <input type="hidden" id="aliquotVolume">
                         </div>
                     </div>
 
