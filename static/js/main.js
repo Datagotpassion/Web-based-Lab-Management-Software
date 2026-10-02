@@ -788,6 +788,28 @@ function setFetchStatus(html, kind) {
         .show();
 }
 
+function applyLookup(d) {
+    const filled = [], skipped = [];
+    Object.entries(LOOKUP_TARGETS).forEach(([key, sel]) => {
+        if (!(key in d.fields)) return;
+        const $el = $(sel);
+        if (!$el.length) return;
+        const current = ($el.val() || '').toString().trim();
+        if (current) { skipped.push(key); return; }   // never overwrite
+        $el.val(d.fields[key]);
+        filled.push(key);
+    });
+    const pretty = k => k.replace(/_/g, ' ');
+    let msg = filled.length
+        ? `<i class="bi bi-check-circle"></i> Filled: <strong>${filled.map(pretty).join(', ')}</strong>`
+        : '<i class="bi bi-info-circle"></i> Nothing new to fill.';
+    if (skipped.length) {
+        msg += `<br><span class="text-muted">Left alone (already filled): ${skipped.map(pretty).join(', ')}</span>`;
+    }
+    msg += `<br><span class="text-muted">Source: ${d.sources.join(', ')}. Check the values before saving.</span>`;
+    setFetchStatus(msg, filled.length ? 'ok' : null);
+}
+
 $(document).on('click', '#btnFetchProduct', function () {
     const url = ($('#productUrl').val() || '').trim();
     if (!url) {
@@ -807,29 +829,40 @@ $(document).on('click', '#btnFetchProduct', function () {
     .then(r => r.json().then(d => ({ok: r.ok, d})))
     .then(({ok, d}) => {
         if (!ok || !d.success) throw new Error(d.error || 'Lookup failed');
+        applyLookup(d);
+    })
+    .catch(e => {
+        setFetchStatus(`<i class="bi bi-exclamation-triangle"></i> ${e.message}
+            <br><span class="text-muted">Some suppliers block this or build their
+            pages in the browser. Paste the page below instead.</span>`, 'error');
+        offerPaste();
+    })
+    .finally(() => $btn.prop('disabled', false).html(original));
+});
 
-        const filled = [], skipped = [];
-        Object.entries(LOOKUP_TARGETS).forEach(([key, sel]) => {
-            if (!(key in d.fields)) return;
-            const $el = $(sel);
-            if (!$el.length) return;
-            const current = ($el.val() || '').toString().trim();
-            if (current) { skipped.push(key); return; }   // never overwrite
-            $el.val(d.fields[key]);
-            filled.push(key);
-        });
+// Offer the paste route whenever a fetch fails: those vendors cannot be
+// fetched at all, so retrying the URL will never work.
+function offerPaste() { $('#pasteFallback').show(); }
 
-        const pretty = k => k.replace(/_/g, ' ');
-        let msg = filled.length
-            ? `<i class="bi bi-check-circle"></i> Filled: <strong>${filled.map(pretty).join(', ')}</strong>`
-            : '<i class="bi bi-info-circle"></i> Nothing new to fill.';
-        if (skipped.length) {
-            msg += `<br><span class="text-muted">Left alone (already filled): `
-                 + `${skipped.map(pretty).join(', ')}</span>`;
-        }
-        msg += `<br><span class="text-muted">Source: ${d.sources.join(', ')}. `
-             + `Check the values before saving.</span>`;
-        setFetchStatus(msg, filled.length ? 'ok' : null);
+$(document).on('click', '#btnHidePaste', () => $('#pasteFallback').hide());
+
+$(document).on('click', '#btnFetchPasted', function () {
+    const html = ($('#pastedPage').val() || '').trim();
+    if (!html) { setFetchStatus('Paste the page contents first.', 'error'); return; }
+    const $btn = $(this).prop('disabled', true);
+    const original = $btn.html();
+    $btn.html('<span class="spinner-border spinner-border-sm"></span> Reading…');
+
+    fetch('/api/lookup', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({url: ($('#productUrl').val() || '').trim(), html})
+    })
+    .then(r => r.json().then(d => ({ok: r.ok, d})))
+    .then(({ok, d}) => {
+        if (!ok || !d.success) throw new Error(d.error || 'Could not read that');
+        applyLookup(d);
+        $('#pasteFallback').hide();
     })
     .catch(e => setFetchStatus(
         `<i class="bi bi-exclamation-triangle"></i> ${e.message}`, 'error'))
