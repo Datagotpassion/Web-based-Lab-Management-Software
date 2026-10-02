@@ -135,7 +135,12 @@
                     to right, door on the right.
                 </div>
                 {% endif %}
-                <div class="fz-detail-grid mb-3" id="detailGrid"></div>
+                <!-- Door edge of this rack, which is the orientation that
+                     matters once it is pulled out in front of you. -->
+                <div class="d-flex gap-2 mb-3 align-items-stretch">
+                    <div class="fz-detail-grid" id="detailGrid"></div>
+                    <div class="fz-door">DOOR</div>
+                </div>
                 <hr class="my-2">
                 <div id="boxContents">
                     <div class="text-muted small">Pick a box to see what is in it.</div>
@@ -265,7 +270,8 @@ function renderMap() {
 
     host.append(`<div class="fz-orient">
         <i class="bi bi-arrow-right"></i>
-        Positions run left to right, then down. The door is on the right.
+        Within a rack, positions run left to right then down, with the door
+        edge on the right.
     </div>`);
 
     sections.forEach(section => {
@@ -289,8 +295,6 @@ function renderMap() {
                 racks.forEach(r => $racks.append(rackTile(r, false)));
             }
             $row.append($racks);
-            // The door edge, so the picture is oriented like the freezer.
-            $row.append('<div class="fz-door">DOOR</div>');
             host.append($row);
         });
     });

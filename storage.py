@@ -25,6 +25,15 @@ ITEM_TABLES = (
     ('secondary_antibodies', 'name'),
 )
 
+# Extra columns worth showing beside an item's name when listing a container's
+# contents. Per table, because the antibody tables record concentration as free
+# text and carry no separate unit column.
+DETAIL_COLUMNS = {
+    'drugs': ('stock_concentration', 'stock_unit', 'aliquot_volume'),
+    'primary_antibodies': ('stock_concentration', 'aliquot_volume'),
+    'secondary_antibodies': ('stock_concentration', 'aliquot_volume'),
+}
+
 # Open vocabulary. Not enforced as a constraint -- it drives the UI's pick list
 # and the default child axis, but an unlisted kind is stored happily.
 KINDS = ('section', 'shelf', 'rack', 'drawer', 'bin', 'box', 'tray', 'other')
@@ -484,13 +493,18 @@ class StorageTree:
             placeholders = ','.join('?' * len(ids))
             items = []
             for table, name_col in ITEM_TABLES:
+                extra = DETAIL_COLUMNS.get(table, ())
+                cols = ''.join(f', "{col}"' for col in extra)
                 for r in c.execute(
-                        f'SELECT id, "{name_col}" AS name, container_id FROM {table}'
+                        f'SELECT id, "{name_col}" AS name, container_id{cols}'
+                        f' FROM {table}'
                         f' WHERE container_id IN ({placeholders}) ORDER BY "{name_col}"',
                         ids):
-                    items.append({'table': table, 'id': r['id'],
-                                  'name': r['name'],
-                                  'container_id': r['container_id']})
+                    item = {'table': table, 'id': r['id'], 'name': r['name'],
+                            'container_id': r['container_id']}
+                    for col in extra:
+                        item[col] = r[col]
+                    items.append(item)
         return items
 
     def unplaced_items(self):
