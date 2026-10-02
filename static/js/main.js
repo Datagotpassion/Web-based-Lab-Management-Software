@@ -429,7 +429,7 @@ function editRecord(id) {
             $('#solubility').val(record.solubility || '');
             $('#preparationTime').val(record.preparation_time || '');
             $('#expirationTime').val(record.expiration_time || '');
-            $('#aliquotVolume').val(record.aliquot_volume || '');
+            aliquotToFields(record.aliquot_volume);
             $('#productUrl').val(record.product_url || '');
             $('#fetchStatus').hide();
             $('#notes').val(record.notes || '');
@@ -475,7 +475,7 @@ function saveRecord() {
         lot_number: $('#lotNumber').val() || null,
         product_number: $('#productNumber').val() || null,
         container_id: containerId ? parseInt(containerId) : null,
-        aliquot_volume: $('#aliquotVolume').val() || null,
+        aliquot_volume: aliquotFromFields(),
         product_url: $('#productUrl').val() || null
     };
 
@@ -895,3 +895,33 @@ $(document).on('click', '#btnFromBrowser', function () {
         + ' <a href="/bookmarklet" target="_blank">Set up the bookmark</a>', 'error'))
     .finally(() => $btn.prop('disabled', false).html(original));
 });
+
+/* --------------------------------------------------------- aliquot volume
+
+   Stored as one text column ("50 µL") but entered as a number plus a unit, so
+   a bare "5" cannot be saved -- which is what put units-less values on the
+   freezer display in the first place.
+*/
+
+// Unit spellings seen in existing data, normalised to one form.
+const ALIQUOT_UNITS = {
+    'ul': 'µL', 'µl': 'µL', 'ml': 'mL', 'l': 'L',
+    'ug': 'µg', 'µg': 'µg', 'mcg': 'µg', 'mg': 'mg', 'g': 'g',
+    'vial': 'vials', 'vials': 'vials',
+};
+
+function aliquotToFields(stored) {
+    const m = String(stored || '').trim().match(/^([\d.]+)\s*(.*)$/);
+    if (!m) { $('#aliquotValue').val(''); return; }
+    $('#aliquotValue').val(m[1]);
+    const unit = ALIQUOT_UNITS[(m[2] || '').trim().toLowerCase()];
+    // An unrecognised or absent unit leaves the picker at its default rather
+    // than guessing, so the gap is visible and gets corrected on save.
+    if (unit) $('#aliquotUnit').val(unit);
+}
+
+function aliquotFromFields() {
+    const value = ($('#aliquotValue').val() || '').toString().trim();
+    if (!value) return null;
+    return `${value} ${$('#aliquotUnit').val()}`;
+}
