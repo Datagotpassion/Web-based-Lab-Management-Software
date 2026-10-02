@@ -660,6 +660,20 @@ def _lan_address():
         return None
 
 
+def _last_sync():
+    """Timestamp written by sync_to_pi.py each time it confirms this copy.
+
+    Absent on the machine holding the authoritative database, which is never
+    synced to.
+    """
+    try:
+        path = os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), '.last_sync')
+        with open(path) as fh:
+            return fh.read().strip() or None
+    except OSError:
+        return None
+
+
 @app.route('/api/health', methods=['GET'])
 def api_health():
     """Liveness plus a quick sanity summary.
@@ -683,6 +697,10 @@ def api_health():
             'database': os.path.abspath(DB_PATH),
             'database_mtime': datetime.fromtimestamp(
                 os.path.getmtime(DB_PATH)).isoformat(timespec='seconds'),
+            # When the copy was last confirmed current. Distinct from
+            # database_mtime, which only moves when something actually
+            # changed -- a quiet week would otherwise look like a dead sync.
+            'last_sync': _last_sync(),
             'units': len(units),
             'containers': len(containers),
             'records': len(records),
