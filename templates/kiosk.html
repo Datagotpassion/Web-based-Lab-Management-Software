@@ -248,7 +248,13 @@ async function boot() {
 // DHCP rather than needing anyone to ping for it.
 function renderAddress(health) {
     const el = $('#addrLine');
-    if (!health || !health.address) { el.innerHTML = '&nbsp;'; return; }
+    if (!health) { el.innerHTML = '&nbsp;'; return; }
+    if (!health.address) {
+        // Said plainly, because an address that cannot be determined usually
+        // means the network is gone -- which is worth knowing at the freezer.
+        el.innerHTML = '<span class="stale">no network</span>';
+        return;
+    }
     const url = `${health.address}:${health.port}`;
     const name = health.hostname ? `${health.hostname}.local:${health.port}` : '';
     // How stale the replica is, since this panel shows a copy.

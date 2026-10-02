@@ -623,17 +623,41 @@ def _lan_address():
     after DHCP moves it.
     """
     import socket
+    import subprocess
+
+    def usable(addr):
+        # Debian maps its own hostname to 127.0.1.1, so a naive lookup yields a
+        # loopback address that looks plausible and is useless to anyone trying
+        # to reach the machine. Better to report nothing than that.
+        return bool(addr) and not addr.startswith('127.')
+
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         sock.connect(('8.8.8.8', 53))
-        return sock.getsockname()[0]
+        addr = sock.getsockname()[0]
+        if usable(addr):
+            return addr
     except OSError:
-        try:
-            return socket.gethostbyname(socket.gethostname())
-        except OSError:
-            return None
+        pass            # no default route yet, e.g. just after a move
     finally:
         sock.close()
+
+    # Ask the interfaces directly. Works without a default route, which the
+    # probe above needs.
+    try:
+        out = subprocess.run(['hostname', '-I'], capture_output=True, text=True,
+                             timeout=5).stdout
+        for addr in out.split():
+            if usable(addr) and ':' not in addr:
+                return addr
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+    try:
+        addr = socket.gethostbyname(socket.gethostname())
+        return addr if usable(addr) else None
+    except OSError:
+        return None
 
 
 @app.route('/api/health', methods=['GET'])

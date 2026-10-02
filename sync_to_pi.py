@@ -86,12 +86,21 @@ def host():
     global _HOST
     if _HOST:
         return _HOST
-    candidates = [PI_HOST]
+    # The last address that worked is tried first: it is the common case and
+    # costs one fast probe. The mDNS name is the recovery path for when the
+    # address changes -- but it only resolves within a subnet, and the display
+    # can land on a different one, so it cannot be relied on as the primary.
+    candidates = []
     last = load_state().get('address')
-    if last and last != PI_HOST:
+    if last:
         candidates.append(last)
+    if PI_HOST not in candidates:
+        candidates.append(PI_HOST)
+    extra = os.environ.get('LABPI_FALLBACKS', '')
+    candidates += [c.strip() for c in extra.split(',') if c.strip()]
+
     for cand in candidates:
-        probe = run(['ssh', *SSH_BASE, f'{PI_USER}@{cand}', 'true'], timeout=20)
+        probe = run(['ssh', *SSH_BASE, f'{PI_USER}@{cand}', 'true'], timeout=15)
         if probe.returncode == 0:
             _HOST = cand
             return cand
