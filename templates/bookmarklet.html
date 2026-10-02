@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}Capture from browser{% endblock %}
+
+{% block extra_css %}
+<style>
+    .bm-link { display: inline-block; padding: .6rem 1.1rem; border-radius: .5rem;
+               background: #0d6efd; color: #fff !important; font-weight: 600;
+               text-decoration: none; cursor: grab; }
+    .bm-link:active { cursor: grabbing; }
+    .step { counter-increment: step; }
+    .step::before { content: counter(step); display: inline-flex;
+                    align-items: center; justify-content: center;
+                    width: 1.6rem; height: 1.6rem; border-radius: 50%;
+                    background: #0d6efd; color: #fff; font-size: .85rem;
+                    font-weight: 700; margin-right: .5rem; }
+    .steps { counter-reset: step; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <h4>Capture a product page from your browser</h4>
+    <p class="text-muted">
+      Some suppliers &mdash; Sigma-Aldrich and R&amp;D Systems among them &mdash;
+      refuse requests from this server, and others build their pages in
+      JavaScript so there is nothing to read. Your browser can already see those
+      pages, so this hands the page over from there.
+    </p>
+
+    <div class="card mb-3">
+      <div class="card-body text-center">
+        <p class="mb-2 fw-semibold">Drag this to your bookmarks bar:</p>
+        <a class="bm-link" id="bmLink" href="#">&#128229; Lab Capture</a>
+        <p class="text-muted small mt-2 mb-0">
+          Dragging it is the point &mdash; clicking it here does nothing useful.
+        </p>
+      </div>
+    </div>
+
+    <div class="steps">
+      <p class="step">Open the supplier's product page in a normal tab.</p>
+      <p class="step">Click <strong>Lab Capture</strong> in your bookmarks bar.
+         It will confirm the page was sent.</p>
+      <p class="step">Come back here, open a record, and press
+         <strong>From browser</strong> next to the address box.</p>
+    </div>
+
+    <div class="alert alert-light border small">
+      <i class="bi bi-shield-check"></i>
+      The bookmark only sends the page you are looking at, to
+      <code>{{ request.host_url }}</code>. It keeps one page at a time, holds it
+      in memory rather than on disk, and changes no records by itself.
+    </div>
+
+    <p class="small text-muted">
+      If your bookmarks bar is hidden, press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>.
+    </p>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Built here so the address always matches wherever this app is being served
+// from, rather than being hardcoded.
+const endpoint = window.location.origin + '/api/lookup/capture';
+const code =
+    "javascript:(function(){" +
+    "fetch('" + endpoint + "',{method:'POST'," +
+    "headers:{'Content-Type':'application/json'}," +
+    "body:JSON.stringify({url:location.href,title:document.title," +
+    "html:document.documentElement.outerHTML})})" +
+    ".then(function(r){return r.json()})" +
+    ".then(function(d){alert('Sent to Lab Management ('+d.bytes+" +
+    "' bytes).\\n\\nNow press \"From browser\" in the record form.')})" +
+    ".catch(function(e){alert('Could not reach Lab Management.\\n'+e)})})()";
+
+const link = document.getElementById('bmLink');
+link.href = code;
+link.addEventListener('click', function (ev) {
+    ev.preventDefault();
+    alert('Drag this to your bookmarks bar rather than clicking it, then use '
+        + 'it while viewing a supplier product page.');
+});
+</script>
+{% endblock %}

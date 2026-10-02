@@ -842,6 +842,57 @@ def api_container_items(container_id):
                     'path': storage.path(container_id)})
 
 
+# Last page captured by the bookmarklet. One slot is enough: it is handed
+# straight to the form that is already open, and nothing is worth persisting.
+_CAPTURE = {}
+
+
+@app.route('/api/lookup/capture', methods=['POST', 'OPTIONS'])
+def api_lookup_capture():
+    """Receive a product page from the bookmarklet, running on the vendor's site.
+
+    Several suppliers refuse this server outright or build their pages in
+    JavaScript, so the only way to see the real content is to let the browser
+    that is already displaying it hand the page over.
+
+    CORS is opened on this one endpoint because the request necessarily comes
+    from the vendor's origin. It stores a page and returns a count; it reads
+    nothing and changes no records.
+    """
+    if request.method == 'OPTIONS':
+        resp = app.make_default_options_response()
+    else:
+        data = _body()
+        _CAPTURE.clear()
+        _CAPTURE.update({
+            'url': (data.get('url') or '').strip(),
+            'html': (data.get('html') or '')[:4 * 1024 * 1024],
+            'title': (data.get('title') or '').strip(),
+            'at': datetime.now().isoformat(timespec='seconds'),
+        })
+        resp = jsonify({'success': True, 'bytes': len(_CAPTURE['html'])})
+    resp.headers['Access-Control-Allow-Origin'] = '*'
+    resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    resp.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+    return resp
+
+
+@app.route('/api/lookup/captured', methods=['GET'])
+def api_lookup_captured():
+    """What the bookmarklet last sent, if anything."""
+    if not _CAPTURE.get('html'):
+        return jsonify({'captured': False})
+    return jsonify({'captured': True, 'url': _CAPTURE['url'],
+                    'title': _CAPTURE['title'], 'at': _CAPTURE['at'],
+                    'bytes': len(_CAPTURE['html'])})
+
+
+@app.route('/bookmarklet')
+def bookmarklet_page():
+    """Instructions and the draggable link."""
+    return render_template('bookmarklet.html')
+
+
 @app.route('/api/lookup', methods=['POST'])
 def api_lookup():
     """Read a supplier's product page and return the fields worth filling in.
@@ -857,6 +908,15 @@ def api_lookup():
     # fetch: some refuse non-browser clients, some build the page in
     # JavaScript. Pasting what the browser already has works for both.
     pasted = (data.get('html') or '').strip()
+
+    # Page handed over by the bookmarklet, for vendors this server cannot read.
+    if data.get('use_capture'):
+        if not _CAPTURE.get('html'):
+            return jsonify({'success': False,
+                            'error': 'Nothing captured yet. Open the product '
+                                     'page and click the Lab Capture bookmark.'}), 400
+        pasted = _CAPTURE['html']
+        url = url or _CAPTURE.get('url') or ''
 
     if not url and not pasted:
         return jsonify({'success': False, 'error': 'No address given.'}), 400
