@@ -8,6 +8,9 @@ reopening is instant and the display keeps syncing.
 .pyw rather than .py so Windows uses pythonw and no console window appears.
 """
 
+import ctypes
+import ctypes.wintypes as wintypes
+import json
 import os
 import subprocess
 import sys
@@ -17,6 +20,10 @@ import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).parent
+
+# Where the running window's process id is remembered between launches.
+STATE_DIR = Path(os.environ.get('LOCALAPPDATA', HERE)) / 'LabManagement'
+STATE_FILE = STATE_DIR / 'window.json'
 PORT = int(os.environ.get('LABMANAGER_PORT', '5000'))
 URL = f'http://localhost:{PORT}/'
 HEALTH = f'{URL}api/health'
@@ -66,7 +73,85 @@ def find_browser():
     return None
 
 
+# ----------------------------------------------------------- single instance
+#
+# Opening the app twice gives two windows onto the same database, which is
+# both confusing and a way to save over your own edits. A second launch should
+# simply bring the existing window forward.
+
+def _process_alive(pid):
+    PROCESS_QUERY_LIMITED = 0x1000
+    handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED, False, pid)
+    if not handle:
+        return False
+    exit_code = wintypes.DWORD()
+    ok = ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+    ctypes.windll.kernel32.CloseHandle(handle)
+    STILL_ACTIVE = 259
+    return bool(ok) and exit_code.value == STILL_ACTIVE
+
+
+def _focus_window_of(pid):
+    """Bring that process's first visible top-level window to the front."""
+    user32 = ctypes.windll.user32
+    found = []
+
+    WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def visit(hwnd, _lparam):
+        owner = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        if owner.value == pid and user32.IsWindowVisible(hwnd):
+            if user32.GetWindowTextLengthW(hwnd) > 0:   # skip hidden helpers
+                found.append(hwnd)
+                return False
+        return True
+
+    user32.EnumWindows(WNDENUMPROC(visit), 0)
+    if not found:
+        return False
+
+    hwnd = found[0]
+    SW_RESTORE = 9
+    if user32.IsIconic(hwnd):
+        user32.ShowWindow(hwnd, SW_RESTORE)
+    # SetForegroundWindow is refused unless the calling thread is allowed to
+    # steal focus, so attach to the window's input queue first.
+    kernel32 = ctypes.windll.kernel32
+    target_thread = user32.GetWindowThreadProcessId(hwnd, None)
+    our_thread = kernel32.GetCurrentThreadId()
+    user32.AttachThreadInput(our_thread, target_thread, True)
+    user32.BringWindowToTop(hwnd)
+    user32.SetForegroundWindow(hwnd)
+    user32.AttachThreadInput(our_thread, target_thread, False)
+    return True
+
+
+def focus_existing():
+    """True if an app window was already open and has been brought forward."""
+    try:
+        pid = json.loads(STATE_FILE.read_text()).get('browser_pid')
+    except (OSError, ValueError, AttributeError):
+        return False
+    if not pid or not _process_alive(pid):
+        return False
+    return _focus_window_of(pid)
+
+
+def remember(pid):
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        STATE_FILE.write_text(json.dumps({'browser_pid': pid}))
+    except OSError:
+        pass
+
+
 def main():
+    # Already open? Bring it forward and leave, rather than opening a second
+    # window onto the same database.
+    if focus_existing():
+        return
+
     if not server_up():
         start_server()
         # Waitress starts in well under a second; allow generously for a cold
@@ -91,7 +176,7 @@ def main():
     profile = Path(os.environ['LOCALAPPDATA']) / 'LabManagement' / 'browser'
     profile.mkdir(parents=True, exist_ok=True)
 
-    subprocess.Popen([
+    proc = subprocess.Popen([
         str(browser),
         f'--app={URL}',
         f'--user-data-dir={profile}',
@@ -100,6 +185,11 @@ def main():
         '--no-default-browser-check',
         '--disable-features=TranslateUI',
     ], creationflags=DETACHED_PROCESS, close_fds=True)
+
+    # Remember which process owns the window, so a later launch can focus it.
+    # The window takes a moment to appear; recording the pid immediately is
+    # enough, since focus_existing only looks for windows once asked.
+    remember(proc.pid)
 
 
 if __name__ == '__main__':
