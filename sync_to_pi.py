@@ -73,8 +73,15 @@ def save_state(**fields):
         pass
 
 
+# ssh and scp are console programs, so Windows gives each one its own window
+# even when this script runs under pythonw. On a five-minute timer that is a
+# console flashing up several times an hour, so they are started hidden.
+CREATE_NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
+_HIDDEN = {'creationflags': CREATE_NO_WINDOW} if os.name == 'nt' else {}
+
+
 def run(cmd, **kw):
-    return subprocess.run(cmd, capture_output=True, text=True, **kw)
+    return subprocess.run(cmd, capture_output=True, text=True, **_HIDDEN, **kw)
 
 
 # Resolved once per run: the name if it answers, else whatever address worked
@@ -132,29 +139,27 @@ def sha256(path):
     return h.hexdigest()
 
 
-def remote_sha():
-    r = ssh(f'sha256sum {REMOTE_DB} 2>/dev/null | cut -d" " -f1')
-    return r.stdout.strip() if r.returncode == 0 else None
+def remote_state(stamp=None):
+    """Hash, address and (optionally) heartbeat in a single connection.
 
-
-def touch_heartbeat():
-    """Record on the display that the copy was just confirmed current.
-
-    Written on every successful run, including the common one where nothing
-    needed sending. Without this the display can only see its database's
-    modification time, which does not move when there are no edits -- so a
-    quiet week looks identical to a broken sync.
+    These were three separate ssh calls, which on Windows meant three console
+    windows per run and three round trips for what is one question.
     """
-    stamp = datetime.now().isoformat(timespec='seconds')
-    ssh(f"printf '%s' '{stamp}' > {REMOTE_DIR}/.last_sync", timeout=20)
+    beat = (f"printf '%s' '{stamp}' > {REMOTE_DIR}/.last_sync; " if stamp else '')
+    r = ssh(f'{beat}sha256sum {REMOTE_DB} 2>/dev/null | cut -d" " -f1; '
+            f"hostname -I | awk '{{print $1}}'")
+    if r.returncode != 0:
+        return None, None
+    lines = [l.strip() for l in r.stdout.splitlines() if l.strip()]
+    sha = lines[0] if lines else None
+    addr = lines[1] if len(lines) > 1 else None
+    return sha, addr
 
 
-def _resolved_address():
-    """The display's current numeric address, cached as a fallback for when
-    mDNS stops answering."""
-    r = ssh("hostname -I | awk '{print $1}'", timeout=20)
-    addr = r.stdout.strip() if r.returncode == 0 else ''
-    return addr or load_state().get('address')
+def remote_sha():
+    return remote_state()[0]
+
+
 
 
 def main():
@@ -180,7 +185,11 @@ def main():
     try:
         snapshot(local_snap)
         local_hash = sha256(local_snap)
-        remote_hash = remote_sha()
+        stamp = datetime.now().isoformat(timespec='seconds')
+        # One connection answers "what is there", "where is it" and records the
+        # heartbeat. The heartbeat is written even when nothing needs sending,
+        # since that is what distinguishes a quiet week from a dead sync.
+        remote_hash, remote_addr = remote_state(stamp=None if args.status else stamp)
 
         if args.status:
             state = load_state()
@@ -204,9 +213,7 @@ def main():
 
         if local_hash == remote_hash and not args.force:
             say('Already in sync; nothing sent.')
-            touch_heartbeat()
-            save_state(last_sync=datetime.now().isoformat(timespec='seconds'),
-                       address=_resolved_address())
+            save_state(last_sync=stamp, address=remote_addr or _HOST)
             return 0
 
         # Land it beside the target first, then rename: mv within a filesystem
@@ -232,9 +239,9 @@ def main():
 
         say(f'Synced {local_snap.stat().st_size:,} bytes to {host()} '
             f'({local_hash[:16]})')
-        touch_heartbeat()
-        save_state(last_sync=datetime.now().isoformat(timespec='seconds'),
-                   address=_resolved_address())
+        # Re-stamp after the transfer so the heartbeat reflects the new copy.
+        remote_state(stamp=datetime.now().isoformat(timespec='seconds'))
+        save_state(last_sync=stamp, address=remote_addr or _HOST)
         return 0
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
