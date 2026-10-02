@@ -257,11 +257,15 @@ function renderAddress(health) {
     }
     const url = `${health.address}:${health.port}`;
     const name = health.hostname ? `${health.hostname}.local:${health.port}` : '';
-    // How stale the replica is, since this panel shows a copy.
+    // When the copy was last CONFIRMED current -- not when it last changed.
+    // No edits for a week is normal; no contact with the PC for a week is not.
     let age = '';
-    if (health.database_mtime) {
-        const mins = Math.round((Date.now() - new Date(health.database_mtime)) / 60000);
-        if (mins >= 10) age = ` <span class="stale">· data ${mins} min old</span>`;
+    if (health.last_sync) {
+        const mins = Math.round((Date.now() - new Date(health.last_sync)) / 60000);
+        age = mins >= 20
+            ? ` · <span class="stale">not synced for ${mins >= 120
+                  ? Math.round(mins / 60) + ' h' : mins + ' min'}</span>`
+            : ' · synced';
     }
     el.innerHTML = `<b>${esc(url)}</b>${name ? ' · ' + esc(name) : ''}${age}`;
 }

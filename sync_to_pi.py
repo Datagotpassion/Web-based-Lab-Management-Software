@@ -137,6 +137,18 @@ def remote_sha():
     return r.stdout.strip() if r.returncode == 0 else None
 
 
+def touch_heartbeat():
+    """Record on the display that the copy was just confirmed current.
+
+    Written on every successful run, including the common one where nothing
+    needed sending. Without this the display can only see its database's
+    modification time, which does not move when there are no edits -- so a
+    quiet week looks identical to a broken sync.
+    """
+    stamp = datetime.now().isoformat(timespec='seconds')
+    ssh(f"printf '%s' '{stamp}' > {REMOTE_DIR}/.last_sync", timeout=20)
+
+
 def _resolved_address():
     """The display's current numeric address, cached as a fallback for when
     mDNS stops answering."""
@@ -192,6 +204,7 @@ def main():
 
         if local_hash == remote_hash and not args.force:
             say('Already in sync; nothing sent.')
+            touch_heartbeat()
             save_state(last_sync=datetime.now().isoformat(timespec='seconds'),
                        address=_resolved_address())
             return 0
@@ -219,6 +232,7 @@ def main():
 
         say(f'Synced {local_snap.stat().st_size:,} bytes to {host()} '
             f'({local_hash[:16]})')
+        touch_heartbeat()
         save_state(last_sync=datetime.now().isoformat(timespec='seconds'),
                    address=_resolved_address())
         return 0
