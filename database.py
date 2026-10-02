@@ -44,7 +44,8 @@ class Database:
                 lot_number TEXT,
                 product_number TEXT,
                 aliquot_volume TEXT,
-                container_id INTEGER
+                container_id INTEGER,
+                product_url TEXT
             )
         ''')
 
@@ -55,7 +56,8 @@ class Database:
         existing_columns = [col[1] for col in cursor.execute("PRAGMA table_info(drugs)").fetchall()]
         new_columns = [
             ('aliquot_volume', 'TEXT'),  # e.g. "50 µL", "1 mL"
-            ('container_id', 'INTEGER')  # location in the storage container tree
+            ('container_id', 'INTEGER'),  # location in the storage container tree
+            ('product_url', 'TEXT')  # supplier page the details were taken from
         ]
 
         for col_name, col_type in new_columns:
@@ -183,8 +185,9 @@ class Database:
                 drug_name, stock_concentration, stock_unit, storage_temp,
                 supplier, preparation_date, notes, solvents, solubility,
                 light_sensitive, preparation_time, expiration_time, sterility,
-                lot_number, product_number, aliquot_volume, container_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                lot_number, product_number, aliquot_volume, container_id,
+                product_url
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             data['drug_name'],
             data['stock_concentration'],
@@ -203,7 +206,8 @@ class Database:
             data['product_number'],
             data.get('aliquot_volume'),
             # Location is a node in the storage_containers tree.
-            data.get('container_id')
+            data.get('container_id'),
+            data.get('product_url')
         ))
 
         record_id = cursor.lastrowid
@@ -234,7 +238,8 @@ class Database:
                 lot_number = ?,
                 product_number = ?,
                 aliquot_volume = ?,
-                container_id = ?
+                container_id = ?,
+                product_url = ?
             WHERE id = ?
         ''', (
             data['drug_name'],
@@ -254,6 +259,7 @@ class Database:
             data['product_number'],
             data.get('aliquot_volume'),
             data.get('container_id'),
+            data.get('product_url'),
             record_id
         ))
 

@@ -6,9 +6,11 @@ Main application file with routes and API endpoints
 from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for
 from database import Database
 from storage import StorageTree, StorageError, KINDS, UNIT_KINDS
+import lookup
 import functools
 import io
 import os
+import re
 from datetime import datetime
 
 app = Flask(__name__)
@@ -838,6 +840,34 @@ def api_container_items(container_id):
     deep = request.args.get('deep', '').lower() in ('1', 'true', 'yes')
     return jsonify({'items': storage.container_items(container_id, deep),
                     'path': storage.path(container_id)})
+
+
+@app.route('/api/lookup', methods=['POST'])
+def api_lookup():
+    """Read a supplier's product page and return the fields worth filling in.
+
+    Best effort by nature: how much comes back depends on whether the vendor
+    publishes structured product data. Only what was actually found is
+    returned, so the caller can fill blanks without overwriting anything
+    already typed.
+    """
+    url = (_body().get('url') or '').strip()
+    if not url:
+        return jsonify({'success': False, 'error': 'No address given.'}), 400
+    # Add a scheme only when one is absent, so pasting "thermofisher.com/..."
+    # works without turning "file://..." into a nonsense hostname and a
+    # confusing error.
+    if not re.match(r'^[a-zA-Z][a-zA-Z0-9+.-]*://', url):
+        url = 'https://' + url
+    try:
+        found = lookup.extract(url)
+    except lookup.LookupError_ as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001 - surfaced to the user as-is
+        return jsonify({'success': False,
+                        'error': f'Could not read that page: {exc}'}), 502
+    sources = found.pop('_sources', [])
+    return jsonify({'success': True, 'fields': found, 'sources': sources})
 
 
 @app.route('/api/storage/placeable', methods=['GET'])

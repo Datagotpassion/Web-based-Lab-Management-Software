@@ -400,6 +400,7 @@ function showAddRecordModal() {
     $('#recordModalTitle').text('Add New Record');
     $('#recordForm')[0].reset();
     $('#recordId').val('');
+    $('#fetchStatus').hide();
     populateLocationPicker();
     $('#recordModal').modal('show');
 }
@@ -429,6 +430,8 @@ function editRecord(id) {
             $('#preparationTime').val(record.preparation_time || '');
             $('#expirationTime').val(record.expiration_time || '');
             $('#aliquotVolume').val(record.aliquot_volume || '');
+            $('#productUrl').val(record.product_url || '');
+            $('#fetchStatus').hide();
             $('#notes').val(record.notes || '');
 
             // The picker is built from the already-loaded container index, so
@@ -472,7 +475,8 @@ function saveRecord() {
         lot_number: $('#lotNumber').val() || null,
         product_number: $('#productNumber').val() || null,
         container_id: containerId ? parseInt(containerId) : null,
-        aliquot_volume: $('#aliquotVolume').val() || null
+        aliquot_volume: $('#aliquotVolume').val() || null,
+        product_url: $('#productUrl').val() || null
     };
 
     const url = currentEditingId ? `/api/record/${currentEditingId}` : '/api/record';
@@ -752,4 +756,82 @@ $(document).on('click', '[data-edit-record]', function () {
     const id = +$(this).data('edit-record');
     $('#locationModal').modal('hide');
     editRecord(id);
+});
+
+
+/* ===================== FILL A RECORD FROM A PRODUCT PAGE =====================
+
+   Paste a supplier's catalogue URL and let the server read the page. Fields
+   are only written where the form is still blank, so a fetch can never
+   silently replace something already typed -- and what was filled is reported,
+   because an extraction that quietly half-worked is worse than one that says so.
+*/
+
+// Which form inputs a lookup may fill, keyed by the field names the server returns.
+const LOOKUP_TARGETS = {
+    drug_name: '#drugName',
+    supplier: '#supplier',
+    product_number: '#productNumber',
+    stock_concentration: '#stockConcentration',
+    stock_unit: '#stockUnit',
+    aliquot_volume: '#aliquotVolume',
+    notes: '#notes',
+    product_url: '#productUrl',
+};
+
+function setFetchStatus(html, kind) {
+    $('#fetchStatus')
+        .removeClass('text-muted text-success text-danger')
+        .addClass(kind === 'error' ? 'text-danger'
+                : kind === 'ok' ? 'text-success' : 'text-muted')
+        .html(html)
+        .show();
+}
+
+$(document).on('click', '#btnFetchProduct', function () {
+    const url = ($('#productUrl').val() || '').trim();
+    if (!url) {
+        setFetchStatus('Paste the product page address first.', 'error');
+        return;
+    }
+    const $btn = $(this).prop('disabled', true);
+    const original = $btn.html();
+    $btn.html('<span class="spinner-border spinner-border-sm"></span> Reading…');
+    setFetchStatus('Reading the supplier page…');
+
+    fetch('/api/lookup', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({url})
+    })
+    .then(r => r.json().then(d => ({ok: r.ok, d})))
+    .then(({ok, d}) => {
+        if (!ok || !d.success) throw new Error(d.error || 'Lookup failed');
+
+        const filled = [], skipped = [];
+        Object.entries(LOOKUP_TARGETS).forEach(([key, sel]) => {
+            if (!(key in d.fields)) return;
+            const $el = $(sel);
+            if (!$el.length) return;
+            const current = ($el.val() || '').toString().trim();
+            if (current) { skipped.push(key); return; }   // never overwrite
+            $el.val(d.fields[key]);
+            filled.push(key);
+        });
+
+        const pretty = k => k.replace(/_/g, ' ');
+        let msg = filled.length
+            ? `<i class="bi bi-check-circle"></i> Filled: <strong>${filled.map(pretty).join(', ')}</strong>`
+            : '<i class="bi bi-info-circle"></i> Nothing new to fill.';
+        if (skipped.length) {
+            msg += `<br><span class="text-muted">Left alone (already filled): `
+                 + `${skipped.map(pretty).join(', ')}</span>`;
+        }
+        msg += `<br><span class="text-muted">Source: ${d.sources.join(', ')}. `
+             + `Check the values before saving.</span>`;
+        setFetchStatus(msg, filled.length ? 'ok' : null);
+    })
+    .catch(e => setFetchStatus(
+        `<i class="bi bi-exclamation-triangle"></i> ${e.message}`, 'error'))
+    .finally(() => $btn.prop('disabled', false).html(original));
 });
