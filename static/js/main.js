@@ -69,6 +69,9 @@ function populateTemperatureFilter() {
 
     // Update filter dropdown (if it exists)
     if (tempFilter.length) {
+        // Keep whatever is selected: this can run again after the structure
+        // changes, and rebuilding the options would otherwise reset the filter.
+        const chosen = tempFilter.val();
         let filterOptions = '<option value="">All Temperatures</option>';
         tempTypes.forEach(temp => {
             const label = formatTempLabel(temp);
@@ -79,6 +82,7 @@ function populateTemperatureFilter() {
             filterOptions += '<option value="RT">Room Temperature</option>';
         }
         tempFilter.html(filterOptions);
+        if (chosen) tempFilter.val(chosen);
     }
 
     // Update storage temp dropdown in add/edit form (if it exists)
@@ -188,11 +192,14 @@ function escapeHtml(s) {
 
 // Load all records
 function loadRecords() {
-    fetch('/api/records')
+    return fetch('/api/records')
         .then(response => response.json())
         .then(records => {
             allRecords = records;
-            displayRecords(records);
+            // Re-apply whatever the search box and temperature filter are set
+            // to. Showing the full list here would silently undo a filter the
+            // user is still looking at, every time they save or delete.
+            filterRecords();
         })
         .catch(error => {
             console.error('Error loading records:', error);
