@@ -834,7 +834,9 @@ $(document).on('click', '#btnFetchProduct', function () {
     .catch(e => {
         setFetchStatus(`<i class="bi bi-exclamation-triangle"></i> ${e.message}
             <br><span class="text-muted">Some suppliers block this or build their
-            pages in the browser. Paste the page below instead.</span>`, 'error');
+            pages in the browser. Use <strong>From browser</strong> with the
+            <a href="/bookmarklet" target="_blank">Lab Capture bookmark</a>,
+            or paste the page below.</span>`, 'error');
         offerPaste();
     })
     .finally(() => $btn.prop('disabled', false).html(original));
@@ -866,5 +868,30 @@ $(document).on('click', '#btnFetchPasted', function () {
     })
     .catch(e => setFetchStatus(
         `<i class="bi bi-exclamation-triangle"></i> ${e.message}`, 'error'))
+    .finally(() => $btn.prop('disabled', false).html(original));
+});
+
+// Use the page the Lab Capture bookmark sent from the browser. This is the
+// route for suppliers that refuse this server or render client-side.
+$(document).on('click', '#btnFromBrowser', function () {
+    const $btn = $(this).prop('disabled', true);
+    const original = $btn.html();
+    $btn.html('<span class="spinner-border spinner-border-sm"></span>');
+    setFetchStatus('Reading the captured page…');
+
+    fetch('/api/lookup', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({use_capture: true,
+                              url: ($('#productUrl').val() || '').trim()})
+    })
+    .then(r => r.json().then(d => ({ok: r.ok, d})))
+    .then(({ok, d}) => {
+        if (!ok || !d.success) throw new Error(d.error || 'Nothing captured');
+        applyLookup(d);
+    })
+    .catch(e => setFetchStatus(
+        `<i class="bi bi-exclamation-triangle"></i> ${e.message}`
+        + ' <a href="/bookmarklet" target="_blank">Set up the bookmark</a>', 'error'))
     .finally(() => $btn.prop('disabled', false).html(original));
 });
