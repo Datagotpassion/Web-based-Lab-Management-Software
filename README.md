@@ -1,5 +1,7 @@
 # Lab Management System
 
+**[Quick start](docs/QUICKSTART.md)&nbsp;·&nbsp;[快速上手](docs/QUICKSTART.zh.md)**
+
 Tracks lab reagents and antibodies, where they are stored, and designs
 immunofluorescence panels. Flask + SQLite, with a touchscreen display beside
 the &minus;80&nbsp;&deg;C freezer.
@@ -111,8 +113,17 @@ deletion reaches it within minutes.
 
 ## Running and deploying
 
+On Windows, one command does the lot &mdash; virtual environment, dependencies,
+database, shortcuts and the hourly backup task:
+
+```powershell
+.\setup_windows.ps1 -WithExamples
+```
+
+By hand, or on another platform:
+
 ```bash
-pip install -r requirements.txt   # runtime, all pure-Python
+pip install -r requirements.txt        # runtime, all pure-Python
 python examples/seed_example_data.py   # a demo database to look at
 LABMANAGER_DB=example.db python serve.py
 python -m pytest tests -q
@@ -165,6 +176,14 @@ tests/                  127 tests
 Deletion in the container tree uses explicit recursive SQL rather than
 `ON DELETE CASCADE`, because sqlite only honours foreign keys when
 `PRAGMA foreign_keys` is on per connection and `database.py` does not set it.
+
+## Language
+
+Available in English and Chinese; switch with the globe icon in the menu, or
+**EN/中文** on the freezer display. Translation is applied to the rendered page
+rather than to the templates, because most of this interface is built in
+JavaScript and template-level translation would miss it. See
+`static/js/i18n.js` &mdash; adding a language means adding a column to each entry.
 
 ## Known limitations
 

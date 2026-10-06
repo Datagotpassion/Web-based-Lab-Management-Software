@@ -22,6 +22,10 @@
               border-bottom: 1px solid #243244; }
     .k-title { font-size: 1.02rem; font-weight: 700; }
     .k-sub { font-size: .8rem; color: #7f93a8; margin-left: auto; }
+    .k-lang { flex: 0 0 auto; border: 1px solid #2d4057; border-radius: 6px;
+              padding: .3rem .7rem; font-size: .82rem; font-weight: 700;
+              color: #6fb1ef; cursor: pointer; }
+    .k-lang:active { background: #1d2b3c; }
 
     .k-body { flex: 1 1 auto; position: relative; overflow: hidden; }
     .screen { position: absolute; inset: 0; padding: 10px 12px;
@@ -133,8 +137,10 @@
 </style>
 
 <div class="k-head">
-    <div class="k-title" id="headTitle">&minus;80 &deg;C Freezer</div>
-    <div class="k-sub" id="headSub"></div>
+    <div class="k-title" id="headTitle" data-no-i18n>&minus;80 &deg;C Freezer</div>
+    <div class="k-sub" id="headSub" data-no-i18n></div>
+    <!-- Touch-sized, and outside translation so it always reads the same. -->
+    <div class="k-lang" id="langToggle" data-no-i18n>EN</div>
 </div>
 
 <div class="k-body">
@@ -218,6 +224,7 @@
     </div>
 </div>
 
+<script src="/static/js/i18n.js"></script>
 <script>
 const PER_PAGE = 8;                 // 4 rows x 2 columns, fits without scrolling
 let CONTAINERS = [], BY_ID = {}, ITEMS = [], UNIT = null;
@@ -548,6 +555,13 @@ document.addEventListener('click', ev => {
 setInterval(() => {
     if ($('#scHome').classList.contains('active')) boot().catch(() => {});
 }, 120000);
+
+// Language toggle, and keep the label showing the current choice.
+document.getElementById('langToggle').textContent =
+    i18nLang() === 'zh' ? '中文' : 'EN';
+document.getElementById('langToggle').addEventListener('click', () => {
+    i18nSetLang(i18nLang() === 'zh' ? 'en' : 'zh');
+});
 
 boot().catch(e => {
     document.body.innerHTML =

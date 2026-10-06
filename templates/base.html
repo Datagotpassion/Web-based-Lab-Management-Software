@@ -256,6 +256,18 @@
                             <i class="bi bi-grid-3x3"></i> Structure
                         </a>
                     </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button"
+                           data-bs-toggle="dropdown" data-no-i18n>
+                            <i class="bi bi-translate"></i> <span id="langLabel">EN</span>
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end" data-no-i18n>
+                            <li><a class="dropdown-item" href="#"
+                                   onclick="i18nSetLang('en');return false">English</a></li>
+                            <li><a class="dropdown-item" href="#"
+                                   onclick="i18nSetLang('zh');return false">中文</a></li>
+                        </ul>
+                    </li>
                     <li class="nav-item">
                         <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#settingsModal">
                             <i class="bi bi-gear-fill"></i>
@@ -321,6 +333,16 @@
     <!-- Bootstrap JS and jQuery, served locally (see the head comment) -->
     <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
     <script src="{{ url_for('static', filename='vendor/jquery/jquery-3.7.0.min.js') }}"></script>
+
+    <!-- Interface translation, applied to the rendered page because most of
+         this UI is built in JavaScript. See static/js/i18n.js. -->
+    <script src="{{ url_for('static', filename='js/i18n.js') }}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var el = document.getElementById('langLabel');
+            if (el) el.textContent = i18nLang() === 'zh' ? '中文' : 'EN';
+        });
+    </script>
 
     <!-- Settings Script -->
     <script>
