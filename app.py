@@ -6,6 +6,7 @@ Main application file with routes and API endpoints
 from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for
 from database import Database
 from storage import StorageTree, StorageError, KINDS, UNIT_KINDS
+import history
 import lookup
 import functools
 import io
@@ -34,6 +35,12 @@ READ_ONLY = os.environ.get('LABMANAGER_READONLY', '').strip().lower() in (
 
 db = Database(DB_PATH)
 
+# Point-in-time history, so one record can be put back without restoring the
+# whole database. Implemented as triggers, so every write path is covered.
+with db.get_connection() as _conn:
+    history.ensure(_conn)
+_conn.close()
+
 # Storage container tree (units > sections > shelves > racks > boxes > ...).
 # ensure_schema is idempotent and makes a fresh install come up working.
 storage = StorageTree(DB_PATH).ensure_schema()
@@ -53,6 +60,30 @@ def block_writes_when_read_only():
                      'database, refreshed periodically. Add or edit records on '
                      'the lab PC.',
         }), 403
+
+
+@app.after_request
+def attribute_history(response):
+    """Name where a change came from, once the write has happened.
+
+    Triggers cannot see the caller, so this fills in afterwards. With no
+    login this records an address rather than a person -- useful for telling
+    the lab PC apart from someone's laptop, and no more than that.
+    """
+    if request.method in ('GET', 'HEAD', 'OPTIONS') or READ_ONLY:
+        return response
+    if response.status_code >= 400:
+        return response
+    try:
+        conn = db.get_connection()
+        try:
+            history.attribute(conn, request.remote_addr)
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:          # never fail a request over bookkeeping
+        pass
+    return response
 
 
 @app.context_processor
@@ -845,6 +876,69 @@ def api_container_items(container_id):
 # Last page captured by the bookmarklet. One slot is enough: it is handed
 # straight to the form that is already open, and nothing is worth persisting.
 _CAPTURE = {}
+
+
+@app.route('/history')
+def history_page():
+    """Recent changes, and what can be put back."""
+    return render_template('history.html')
+
+
+@app.route('/api/history', methods=['GET'])
+def api_history():
+    """Recent changes across all tracked tables, newest first."""
+    limit = min(int(request.args.get('limit', 150)), 1000)
+    table = request.args.get('table') or None
+    conn = db.get_connection()
+    try:
+        entries = history.recent(conn, limit=limit, table=table)
+        # Pair each entry with the one before it so the UI can say what
+        # changed rather than just that something did.
+        by_record = {}
+        for e in sorted(entries, key=lambda x: x['history_id']):
+            key = (e['table'], e['record_id'])
+            e['summary'] = history.describe(e, by_record.get(key))
+            by_record[key] = e
+        return jsonify({'entries': sorted(
+            entries, key=lambda x: x['history_id'], reverse=True)})
+    finally:
+        conn.close()
+
+
+@app.route('/api/history/deleted', methods=['GET'])
+def api_history_deleted():
+    """Records whose latest entry is a deletion, i.e. the restorable ones."""
+    conn = db.get_connection()
+    try:
+        return jsonify({'deleted': history.deleted(conn)})
+    finally:
+        conn.close()
+
+
+@app.route('/api/history/record/<table>/<int:record_id>', methods=['GET'])
+def api_history_record(table, record_id):
+    """Every version of one record."""
+    conn = db.get_connection()
+    try:
+        entries = history.for_record(conn, table, record_id)
+        for i, e in enumerate(entries):
+            e['summary'] = history.describe(
+                e, entries[i + 1] if i + 1 < len(entries) else None)
+        return jsonify({'entries': entries})
+    finally:
+        conn.close()
+
+
+@app.route('/api/history/restore/<int:history_id>', methods=['POST'])
+def api_history_restore(history_id):
+    """Put a record back as it was at that point."""
+    conn = db.get_connection()
+    try:
+        return jsonify({'success': True, **history.restore(conn, history_id)})
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    finally:
+        conn.close()
 
 
 @app.route('/api/lookup/capture', methods=['POST', 'OPTIONS'])

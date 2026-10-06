@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{% block title %}History{% endblock %}
+
+{% block extra_css %}
+<style>
+    .h-row { display: flex; gap: .6rem; align-items: baseline; padding: .4rem .2rem;
+             border-bottom: 1px solid #f1f3f5; font-size: .88rem; }
+    .h-row:hover { background: #f8f9fa; }
+    .h-when { flex: 0 0 9.5rem; color: #6c757d; font-size: .78rem;
+              font-variant-numeric: tabular-nums; }
+    .h-what { flex: 0 0 5rem; }
+    .h-name { font-weight: 600; }
+    .h-sum  { color: #6c757d; font-size: .82rem; }
+    .h-who  { margin-left: auto; color: #adb5bd; font-size: .74rem;
+              white-space: nowrap; }
+    .badge-create { background: #d1e7dd; color: #0f5132; }
+    .badge-update { background: #cfe2ff; color: #084298; }
+    .badge-delete { background: #f8d7da; color: #842029; }
+    .h-badge { font-size: .7rem; padding: .15rem .45rem; border-radius: .3rem;
+               font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+    .snap { font-family: ui-monospace, Consolas, monospace; font-size: .74rem;
+            background: #f8f9fa; border: 1px solid #e9ecef; border-radius: .3rem;
+            padding: .4rem .5rem; max-height: 11rem; overflow: auto; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="mb-0">History</h4>
+        <small class="text-muted">
+            Every change to a record, and what can be put back.
+        </small>
+    </div>
+    <select class="form-select form-select-sm" id="tableFilter" style="width:auto">
+        <option value="">All records</option>
+        <option value="drugs">Reagents</option>
+        <option value="primary_antibodies">Primary antibodies</option>
+        <option value="secondary_antibodies">Secondary antibodies</option>
+    </select>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-header py-2 fw-semibold">
+        <i class="bi bi-arrow-counterclockwise"></i> Deleted &mdash; restorable
+      </div>
+      <div class="card-body" id="deletedList">
+        <div class="text-muted small">Loading&hellip;</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header py-2 fw-semibold">
+        <i class="bi bi-clock-history"></i> Recent changes
+      </div>
+      <div class="card-body" style="max-height: 70vh; overflow-y: auto"
+           id="historyList">
+        <div class="text-muted small">Loading&hellip;</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="snapModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title" id="snapTitle"></h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="snapBody"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const esc = s => $('<div>').text(s == null ? '' : s).html();
+const TABLE_LABEL = {drugs: 'reagent', primary_antibodies: 'primary antibody',
+                     secondary_antibodies: 'secondary antibody'};
+
+// A record's name lives in a different column per table.
+function nameOf(snapshot) {
+    return snapshot.drug_name || snapshot.name || '(unnamed)';
+}
+
+function when(ts) {
+    // "2026-10-06 10:38:59" -> "6 Oct 10:38"
+    const m = String(ts || '').match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2})/);
+    if (!m) return ts || '';
+    const months = ['Jan','Feb','Mar','Apr','May','Jun',
+                    'Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${+m[3]} ${months[+m[2] - 1]} ${m[4]}`;
+}
+
+function load() {
+    const table = $('#tableFilter').val();
+    const q = table ? `?table=${encodeURIComponent(table)}` : '';
+
+    fetch('/api/history' + q).then(r => r.json()).then(d => {
+        if (!d.entries.length) {
+            $('#historyList').html('<div class="text-muted small">No changes recorded yet.</div>');
+            return;
+        }
+        $('#historyList').html(d.entries.map(e => `
+            <div class="h-row">
+              <span class="h-when">${esc(when(e.changed_at))}</span>
+              <span class="h-what">
+                <span class="h-badge badge-${e.action}">${esc(e.action)}</span>
+              </span>
+              <span>
+                <span class="h-name">${esc(nameOf(e.snapshot))}</span>
+                <span class="h-sum">&mdash; ${esc(e.summary || '')}</span>
+              </span>
+              <span class="h-who">
+                ${e.changed_by ? esc(e.changed_by) + ' · ' : ''}
+                <a href="#" data-snap="${e.history_id}">view</a>
+              </span>
+            </div>`).join(''));
+        window._entries = d.entries;
+    });
+
+    fetch('/api/history/deleted').then(r => r.json()).then(d => {
+        const rows = table ? d.deleted.filter(x => x.table === table) : d.deleted;
+        if (!rows.length) {
+            $('#deletedList').html(
+                '<div class="text-muted small">Nothing deleted.</div>');
+            return;
+        }
+        $('#deletedList').html(rows.map(e => `
+            <div class="d-flex align-items-center gap-2 py-1 border-bottom">
+              <div class="flex-grow-1">
+                <div class="fw-semibold small">${esc(nameOf(e.snapshot))}</div>
+                <div class="text-muted" style="font-size:.74rem">
+                  ${esc(TABLE_LABEL[e.table] || e.table)} ·
+                  deleted ${esc(when(e.changed_at))}
+                </div>
+              </div>
+              <button class="btn btn-sm btn-outline-success"
+                      data-restore="${e.history_id}">Put back</button>
+            </div>`).join(''));
+    });
+}
+
+$(document).on('click', '[data-restore]', function () {
+    const id = +$(this).data('restore');
+    if (!confirm('Put this record back as it was when deleted?')) return;
+    fetch(`/api/history/restore/${id}`, {method: 'POST'})
+        .then(r => r.json())
+        .then(d => {
+            if (!d.success) throw new Error(d.error || 'Restore failed');
+            alert(d.reused_original_id
+                ? 'Restored with its original id, so anything referring to it still works.'
+                : `Restored as a new record (id ${d.id}); the original id was taken.`);
+            load();
+        })
+        .catch(e => alert(e.message));
+});
+
+$(document).on('click', '[data-snap]', function (ev) {
+    ev.preventDefault();
+    const id = +$(this).data('snap');
+    const e = (window._entries || []).find(x => x.history_id === id);
+    if (!e) return;
+    $('#snapTitle').text(`${nameOf(e.snapshot)} — ${e.action} ${when(e.changed_at)}`);
+    const rows = Object.entries(e.snapshot)
+        .filter(([, v]) => v !== null && v !== '')
+        .map(([k, v]) => `<tr><td class="text-muted pe-3">${esc(k)}</td>`
+                       + `<td>${esc(v)}</td></tr>`).join('');
+    $('#snapBody').html(`<table class="table table-sm mb-0">${rows}</table>`);
+    new bootstrap.Modal('#snapModal').show();
+});
+
+$('#tableFilter').on('change', load);
+$(load);
+</script>
+{% endblock %}
