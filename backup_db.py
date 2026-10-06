@@ -11,6 +11,7 @@ of the database under version control even though *.db itself is gitignored.
 Usage:  python backup_db.py
 """
 
+import argparse
 import csv
 import shutil
 import sqlite3
@@ -21,8 +22,41 @@ ROOT = Path(__file__).parent
 DB = ROOT / 'lab_management.db'
 BACKUPS = ROOT / 'backups'
 
+# Enough history to recover from a mistake noticed weeks later, while keeping
+# the directory manageable. At ~90 KB a copy this is trivial on disk.
+KEEP = 30
+
+
+def prune(keep=KEEP):
+    """Drop the oldest binary copies, keeping the most recent `keep`.
+
+    Only the .db files are pruned. schema.sql and the CSVs are overwritten in
+    place each run and are versioned in git, which is the real history.
+    """
+    copies = sorted(BACKUPS.glob('lab_management_*.db'),
+                    key=lambda p: p.stat().st_mtime, reverse=True)
+    removed = 0
+    for old in copies[keep:]:
+        try:
+            old.unlink()
+            removed += 1
+        except OSError:
+            pass
+    return removed, len(copies) - removed
+
 
 def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('--quiet', action='store_true',
+                    help='only report problems (for scheduled runs)')
+    ap.add_argument('--keep', type=int, default=KEEP,
+                    help=f'how many binary copies to retain (default {KEEP})')
+    args = ap.parse_args()
+
+    def say(msg):
+        if not args.quiet:
+            print(msg)
+
     if not DB.exists():
         raise SystemExit(f'No database at {DB}')
 
@@ -38,7 +72,7 @@ def main():
     with dst:
         src.backup(dst)
     dst.close()
-    print(f'db     -> {db_copy.relative_to(ROOT)}  ({db_copy.stat().st_size:,} bytes)')
+    say(f'db     -> {db_copy.relative_to(ROOT)}  ({db_copy.stat().st_size:,} bytes)')
 
     src.row_factory = sqlite3.Row
     cur = src.cursor()
@@ -49,7 +83,7 @@ def main():
     ).fetchall()
     schema = (BACKUPS / 'schema.sql')
     schema.write_text(';\n\n'.join(r['sql'] for r in rows) + ';\n', encoding='utf-8')
-    print(f'schema -> {schema.relative_to(ROOT)}  ({len(rows)} objects)')
+    say(f'schema -> {schema.relative_to(ROOT)}  ({len(rows)} objects)')
 
     # One CSV per table
     tables = [
@@ -66,10 +100,13 @@ def main():
             writer = csv.writer(fh)
             writer.writerow(cols)
             writer.writerows([tuple(r) for r in data])
-        print(f'csv    -> {path.relative_to(ROOT)}  ({len(data)} rows)')
+        say(f'csv    -> {path.relative_to(ROOT)}  ({len(data)} rows)')
 
     src.close()
-    print(f'\nDone. {len(tables)} tables backed up at {stamp}.')
+
+    removed, kept = prune(args.keep)
+    say(f'prune  -> removed {removed}, keeping {kept}')
+    say(f'\nDone. {len(tables)} tables backed up at {stamp}.')
 
 
 if __name__ == '__main__':
