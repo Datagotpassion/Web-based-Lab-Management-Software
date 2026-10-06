@@ -43,15 +43,28 @@ DB = HERE / 'lab_management.db'
 # a new DHCP lease, and a hardcoded address would then point at nothing -- so
 # mDNS does the lookup and the last address that worked is kept as a fallback
 # for when mDNS is slow or blocked.
-PI_HOST = os.environ.get('LABPI_HOST', 'labfridge.local')
-PI_USER = os.environ.get('LABPI_USER', 'kdcberry')
-SSH_KEY = os.environ.get('LABPI_KEY', str(Path.home() / '.ssh' / 'id_ed25519_labpi'))
-REMOTE_DIR = os.environ.get('LABPI_DIR', '/home/kdcberry/LabManagement')
-REMOTE_DB = f'{REMOTE_DIR}/lab_management.db'
-
-# Last working address and last successful sync, so a quietly broken sync can
-# be noticed rather than just going stale.
+# This machine's own settings -- which display, which account -- live here
+# rather than in the code, so nothing site-specific is committed. Also holds
+# the last working address and last successful sync, so a quietly broken sync
+# can be noticed rather than just going stale.
 STATE = Path(__file__).parent / '.sync_state.json'
+
+
+def _setting(key, env, default):
+    """Environment first, then local state, then a generic default."""
+    if os.environ.get(env):
+        return os.environ[env]
+    try:
+        return json.loads(STATE.read_text()).get(key) or default
+    except (OSError, ValueError, AttributeError):
+        return default
+
+
+PI_HOST = _setting('host', 'LABPI_HOST', 'labfridge.local')
+PI_USER = _setting('user', 'LABPI_USER', 'pi')
+SSH_KEY = os.environ.get('LABPI_KEY', str(Path.home() / '.ssh' / 'id_ed25519_labpi'))
+REMOTE_DIR = _setting('remote_dir', 'LABPI_DIR', f'/home/{PI_USER}/LabManagement')
+REMOTE_DB = f'{REMOTE_DIR}/lab_management.db'
 
 SSH_BASE = ['-i', SSH_KEY, '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10',
             '-o', 'StrictHostKeyChecking=accept-new']

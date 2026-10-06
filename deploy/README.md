@@ -105,7 +105,7 @@ from source and hang.
 The database is not in git. From the PC:
 
 ```powershell
-scp 'D:\Lab Management\lab_management.db' kdcberry@raspberrypi.local:~/LabManagement/
+scp 'D:\Lab Management\lab_management.db' labuser@raspberrypi.local:~/LabManagement/
 sudo systemctl restart labmanager   # on the Pi
 ```
 
@@ -223,7 +223,7 @@ was the miserable part under X11 and is now free.
 ```bash
 sudo apt install -y chromium-browser
 mkdir -p ~/.config/autostart
-sed "s|/home/kdcberry/LabManagement|$HOME/LabManagement|" \
+sed "s|/home/labuser/LabManagement|$HOME/LabManagement|" \
     ~/LabManagement/deploy/kiosk/labmanager-kiosk.desktop \
     > ~/.config/autostart/labmanager-kiosk.desktop
 ```

@@ -6,19 +6,19 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=kdcberry
-Group=kdcberry
-WorkingDirectory=/home/kdcberry/LabManagement
+User=labuser
+Group=labuser
+WorkingDirectory=/home/labuser/LabManagement
 
 # serve.py runs waitress, not the Flask dev server.
-ExecStart=/home/kdcberry/LabManagement/venv/bin/python serve.py
+ExecStart=/home/labuser/LabManagement/venv/bin/python serve.py
 
 Environment=LABMANAGER_HOST=0.0.0.0
 Environment=LABMANAGER_PORT=5000
 Environment=LABMANAGER_THREADS=4
 # Absolute, so the service does not depend on the working directory and the
 # database cannot be accidentally created somewhere else.
-Environment=LABMANAGER_DB=/home/kdcberry/LabManagement/lab_management.db
+Environment=LABMANAGER_DB=/home/labuser/LabManagement/lab_management.db
 # Replace with a real random value: python -c "import secrets;print(secrets.token_hex(32))"
 # Environment=LABMANAGER_SECRET_KEY=
 
@@ -40,7 +40,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=read-only
-ReadWritePaths=/home/kdcberry/LabManagement
+ReadWritePaths=/home/labuser/LabManagement
 
 [Install]
 WantedBy=multi-user.target

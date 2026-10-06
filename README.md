@@ -113,9 +113,14 @@ deletion reaches it within minutes.
 
 ```bash
 pip install -r requirements.txt   # runtime, all pure-Python
-python serve.py                   # waitress, not the dev server
+python examples/seed_example_data.py   # a demo database to look at
+LABMANAGER_DB=example.db python serve.py
 python -m pytest tests -q
 ```
+
+Real lab data is not in this repository and never should be &mdash; the example
+database is invented, and `backups/` is ignored. Site-specific settings (which
+display to sync to, which account) live in `.sync_state.json`, also ignored.
 
 Every runtime dependency is pure-Python on purpose: piwheels has no wheels for
 Trixie-era Pi OS, so anything compiled would try to build from source on the Pi.

@@ -42,3 +42,7 @@ static/fridge_photos/
 
 # Sync state (last successful sync + last known address)
 .sync_state.json
+
+# Backups contain real lab data and are not for version control.
+# They go to D:\LabManagementBackups and OneDrive instead.
+backups/

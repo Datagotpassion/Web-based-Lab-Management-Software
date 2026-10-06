@@ -55,7 +55,7 @@ fi
 
 say "systemd service"
 # Rewrite the unit for whoever is actually running this, rather than assuming.
-sed -e "s|/home/kdcberry/LabManagement|$REPO_DIR|g" \
+sed -e "s|/home/labuser/LabManagement|$REPO_DIR|g" \
     -e "s|^User=.*|User=$USER|" \
     -e "s|^Group=.*|Group=$(id -gn)|" \
     -e "s|^Environment=LABMANAGER_PORT=.*|Environment=LABMANAGER_PORT=$PORT|" \
